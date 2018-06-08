@@ -12,6 +12,9 @@ an integer number of wave lengths in the well.
 Note: We expect exponential growth whenever 0 < K_P < sqrt(4 * |G|) * A (where G < 0) and stability otherwise.
 I.e., the perturbations will always be stable if G is positive
 
+TO DO:
+1) Measure energy to make sure energy is in fact decreasing for each iteration of findgroundstate
+
 */
 
 #include <stdlib.h>
@@ -433,7 +436,8 @@ void findGroundState(double real_solution[][4], int space_points, int iterations
 	for (int p = 1; p < iterations; ++p)
 	{
 
-		
+		for(int i = 0; i < space_points; ++i)
+			real_solution[i][1] = real_solution[i][0] + Delta_t * fgs(real_solution, i, 0);
 
 		// Move solution back an index so we can repeat the process
 		for (int i = 0; i < space_points; ++i)
@@ -492,7 +496,6 @@ void stepTwo(double real_solution[][4], int space_points){
 		real_solution[i][0] = initialCondition[i];
 
 	normalize(real_solution);
-	printf("%e\n", PsiNorm(real_solution)-1.0);
 
 	realTimeProp(initialCondition, T, iterative_period, real_sample, imag_sample, stepTwoPlot );
 }
