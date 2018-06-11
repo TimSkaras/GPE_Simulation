@@ -14,6 +14,12 @@ IMPORTANT RESULTS:
 - Smaller time step for ITP by factor of 2, amplitude of oscillation is about half -- result shows promise
 
 
+TODO:
+1) Change the ITP from RK4 to standard FD
+2) Modify RTP to have 2 RHS functions instead of 4
+3) Transfer RTP code into its own function
+4) Create stepTwo function for 2D
+
 */
 
 #include <stdlib.h>
@@ -23,10 +29,10 @@ IMPORTANT RESULTS:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.01
+#define TIME 0.0001
 #define XLENGTH 4.0 //4.0
 #define YLENGTH 0.1 //0.1
-#define TIME_POINTS 1000 	//number of time points
+#define TIME_POINTS 10 	//number of time points
 #define SPACE_POINTS 150	//number of spatial points
 #define SPX 600 //600
 #define SPY 20 //20
@@ -173,9 +179,47 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS]){
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
 }
 
+// ----------------- Real Time Propagation Functions ---------------
 
+double f(double Psi_imag[SPX][SPY][TIME_POINTS], double Psi_real[SPX][SPY][TIME_POINTS], int i, int j, int p){	
+	// f is the function that gives the derivative for psi_real, which is why it is a function of imag_solution
+	
+	double imag_part = Psi_imag[i][j][p];
+	double real_part = Psi_real[i][j][p];
+	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
 
-double error(double solution[SPX][SPY][3]);
+	return -.5 * (Dxx(Psi_imag, i, j, p) + Dyy(Psi_imag, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
+}
+
+double g(double Psi_real[SPX][SPY][TIME_POINTS], double Psi_imag[SPX][SPY][TIME_POINTS], int i, int j, int p){	
+	// g gives the derivative for psi_imag, which is why it is a function of real_solution
+	
+	double imag_part = Psi_imag[i][j][p];
+	double real_part = Psi_real[i][j][p];
+	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
+
+	return .5 * (Dxx(Psi_real, i, j, p) + Dyy(Psi_real, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+}
+
+double f_prime(double imag_temp[SPX][SPY][3], double real_temp[SPX][SPY][3], int i, int j, int p){
+	// f_prime gives the derivative for psi_real but for the K matrices because they need a function with a different argument
+	
+	double imag_part = imag_temp[i][j][p];
+	double real_part = real_temp[i][j][p];
+	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
+
+	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
+}
+
+double g_prime(double real_temp[SPX][SPY][3], double imag_temp[SPX][SPY][3], int i, int j, int p){
+	// g_prime gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
+	
+	double imag_part = imag_temp[i][j][p];
+	double real_part = real_temp[i][j][p];
+	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
+
+	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+}
 
 // -------------Imaginary Time Propagation Functions------------
 
@@ -222,8 +266,6 @@ void findGroundState(double real_solution[SPX][SPY][3], int iterations) {
 
 	// Declare initial variables
 	double real_temp[SPX][SPY][3];
-	double K[SPX][SPY][3];
-	double k_3;
 
 	// Assign initial guess
 	for (int i = 0; i < SPX; ++i)
@@ -235,30 +277,9 @@ void findGroundState(double real_solution[SPX][SPY][3], int iterations) {
 	for (int p = 1; p < iterations; ++p)
 	{
 
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-			{
-				K[i][j][0] = fgs(real_solution, i, j, 0);
-				real_temp[i][j][0] = real_solution[i][j][0] + .5 * Delta_t * K[i][j][0];
-			}
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-			{
-				K[i][j][1] = fgs(real_temp, i, j, 0);
-				real_temp[i][j][1] = real_solution[i][j][0] + .5 * Delta_t * K[i][j][1];
-			}
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-			{
-				K[i][j][2] = fgs(real_temp, i, j, 1);
-				real_temp[i][j][2] = real_solution[i][j][0] + Delta_t * K[i][j][2];
-			}
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-			{
-				k_3 = fgs(real_temp, i, j, 2);
-				real_solution[i][j][1] = real_solution[i][j][0] + 1./6 * Delta_t * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
-			}
+		for(int i = 0; i < spx; ++i)
+			for(int j = 0; j < spy; ++j)
+				real_solution[i][j][1] = real_solution[i][j][0] + Delta_t * fgs(real_solution, i, j, 0);
 
 		// Move solution back an index so we can repeat the process
 		for (int i = 0; i < SPX; ++i)
@@ -274,48 +295,6 @@ void findGroundState(double real_solution[SPX][SPY][3], int iterations) {
 	}
 }
 
-
-// ----------------- Real Time Propagation Functions ---------------
-
-double f(double Psi_imag[SPX][SPY][TIME_POINTS], double Psi_real[SPX][SPY][TIME_POINTS], int i, int j, int p){	
-	// f is the function that gives the derivative for psi_real, which is why it is a function of imag_solution
-	
-	double imag_part = Psi_imag[i][j][p];
-	double real_part = Psi_real[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return -.5 * (Dxx(Psi_imag, i, j, p) + Dyy(Psi_imag, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
-}
-
-double g(double Psi_real[SPX][SPY][TIME_POINTS], double Psi_imag[SPX][SPY][TIME_POINTS], int i, int j, int p){	
-	// g gives the derivative for psi_imag, which is why it is a function of real_solution
-	
-	double imag_part = Psi_imag[i][j][p];
-	double real_part = Psi_real[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return .5 * (Dxx(Psi_real, i, j, p) + Dyy(Psi_real, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
-}
-
-double f_prime(double imag_temp[SPX][SPY][3], double real_temp[SPX][SPY][3], int i, int j, int p){
-	// f_prime gives the derivative for psi_real but for the K matrices because they need a function with a different argument
-	
-	double imag_part = imag_temp[i][j][p];
-	double real_part = real_temp[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
-}
-
-double g_prime(double real_temp[SPX][SPY][3], double imag_temp[SPX][SPY][3], int i, int j, int p){
-	// g_prime gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
-	
-	double imag_part = imag_temp[i][j][p];
-	double real_part = real_temp[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
-}
 
 int main(){
 
@@ -352,7 +331,7 @@ int main(){
 	}
 
 	// find the ground state
-	findGroundState(real_temp, 60000);
+	findGroundState(real_temp, 10000);
 
 	// Save ground state in a separate matrix for comparison and assign the ground state as initial condition to real soltuion
 		// If we save the ground state, we can run real time propagation and determine how much the initial condition changes

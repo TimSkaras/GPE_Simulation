@@ -463,9 +463,9 @@ void stepTwo(double real_solution[][4], int space_points){
 	*
 	*/
 
-	int iterative_period = 6000;
-	int trials = 30;
-	double T = 6.0;
+	int iterative_period = 3000;
+	int trials = 20;
+	double T = 3.0;
 
 	double initialCondition[space_points];
 
@@ -510,7 +510,7 @@ int main() {
 	double ground_state[SPACE_POINTS][4];
 	double initial_condition[SPACE_POINTS];
 
-	findGroundState(ground_state, space_points, 40000);
+	findGroundState(ground_state, space_points, 4000);
 
 	stepTwo(ground_state, space_points);
 
