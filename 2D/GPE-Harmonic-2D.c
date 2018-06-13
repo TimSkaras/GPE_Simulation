@@ -6,7 +6,7 @@ Important constants are defined as preprocessor constants (like the desired leng
 The preprocessor constant W is the harmonic potential constant omega
 
 NOTES:
-- RTP quality decreases as nonlinearity increases. For G ~ 100, normalization error is ~ e-8
+
 
 IMPORTANT RESULTS:
 - When nonlinearity is turned off, the change in groundstate (30000 iterations) under real time propagation is less than 1 in 10^8
@@ -32,10 +32,10 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.01
+#define TIME 0.00125
 #define XLENGTH 6.0 //4.0
 #define YLENGTH 0.15 //0.1
-#define TIME_POINTS 2000 	//number of time points
+#define TIME_POINTS 250 	//number of time points
 #define SPACE_POINTS 150	//number of spatial points
 #define SPX 800 //600
 #define SPY 20 //20
@@ -171,7 +171,8 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS]){
 	for(int i = 0; i < TIME_POINTS; ++i)
 		norm[i] = norm[i] - 1.0;
 
-	// Now we plot the normalization array
+	// Now we plot the normalization array and print the norm loss rate
+	printf("Normalization Loss Rate: %e\n", norm[TIME_POINTS-1]/TIME);
 
 	// Create array of x values to plot then norm against
 	for (int p = 0; p < TIME_POINTS; ++p)
@@ -333,6 +334,8 @@ int main(){
 
 	double third = 1./3.;
 
+	double ratio = 0.17293573625975;
+
 	// run real time propagation algorithm
 	for (int p = 1; p < time_points; ++p){
 
@@ -396,11 +399,11 @@ int main(){
 				k_3 = f(imag_temp, real_temp, i, j, 3);
 				l_3 = g(real_temp, imag_temp, i, j, 3);
 				real_solution[i][j][p] = real_solution[i][j][p - 1] + \
-				0.3 * 1./8 * Dt * (K8[i][j][0] + 3 * K8[i][j][1] + 3 * K8[i][j][2] + k_38) + \
-				0.7 * 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
+				ratio * 1./8 * Dt * (K8[i][j][0] + 3 * K8[i][j][1] + 3 * K8[i][j][2] + k_38) + \
+				(1 - ratio) * 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
 				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + \
-				0.3 * 1./8 * Dt * (L8[i][j][0] + 3 * L8[i][j][1] + 3 * L8[i][j][2] + l_38) + \
-				0.7 * 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
+				ratio * 1./8 * Dt * (L8[i][j][0] + 3 * L8[i][j][1] + 3 * L8[i][j][2] + l_38) + \
+				(1 - ratio) * 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
 			}
 		}
 	}
@@ -421,7 +424,7 @@ int main(){
 	int num_commands = 6;
 
 
-	plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, TIME_POINTS - 1, "sol.temp");
+	// plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, TIME_POINTS - 1, "sol.temp");
 
 	printf("Space Step: %e \nTime Step: %e %e \nRatio: %f\n", HX, Dt, 0, HX / Dt);		
 
@@ -436,7 +439,7 @@ int main(){
 	char * commandsForGnuplot2[] = {"set autoscale", "set title \"Difference in Ground State after Evolution\"", "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'difference.temp' with lines"};
 	num_commands = 7;
 
-	plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");
+	// plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");
 
 	plotNormalization(full_solution);
 
