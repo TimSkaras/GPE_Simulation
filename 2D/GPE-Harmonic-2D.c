@@ -279,16 +279,20 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 	}
 }
 
-
 int main(){
 
 	// Declare initial variables
 	static double real_solution[SPX][SPY][TIME_POINTS]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
-	double real_temp[SPX][SPY][4];
 	static double imag_solution[SPX][SPY][TIME_POINTS]; // Same as real solution but for the imaginary component of Psi
+	double real_temp[SPX][SPY][4];
 	double imag_temp[spx][spy][4];
+	double real_temp8[SPX][SPY][4];
+	double imag_temp8[spx][spy][4];
 	double K[spx][spy][3];
 	double L[spx][spy][3];
+	double K8[spx][spy][3];
+	double L8[spx][spy][3];
+	double k_38, l_38;
 	double k_3, l_3;
 
 
@@ -327,12 +331,16 @@ int main(){
 			real_solution[i][j][0] = real_temp[i][j][0];
 		}
 
+	double third = 1./3.;
+
 	// run real time propagation algorithm
 	for (int p = 1; p < time_points; ++p){
 
 		// Load solution into first column of temp matrices
 		for(int i = 0; i < spx; ++i)
 			for(int j = 0; j < spy; ++j){
+				real_temp8[i][j][0] = real_solution[i][j][p - 1];
+				imag_temp8[i][j][0] = imag_solution[i][j][p - 1];
 				real_temp[i][j][0] = real_solution[i][j][p - 1];
 				imag_temp[i][j][0] = imag_solution[i][j][p - 1];
 		}
@@ -341,28 +349,40 @@ int main(){
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
+				K8[i][j][0] = f(imag_temp8, real_temp8, i, j, 0);
+				L8[i][j][0] = g(real_temp8, imag_temp8, i, j, 0);
 				K[i][j][0] = f(imag_temp, real_temp, i, j, 0);
 				L[i][j][0] = g(real_temp, imag_temp, i, j, 0);
-				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
-				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
+				real_temp8[i][j][1] = real_solution[i][j][p - 1] + third * Dt * K8[i][j][0]; 
+				imag_temp8[i][j][1] = imag_solution[i][j][p - 1] + third * Dt * L8[i][j][0];
+				real_temp[i][j][1] = real_solution[i][j][p - 1] + 0.5 * Dt * K[i][j][0]; 
+				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + 0.5 * Dt * L[i][j][0];
 			}
 		}
 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
+				K8[i][j][1] = f(imag_temp8, real_temp8, i, j, 1);
+				L8[i][j][1] = g(real_temp8, imag_temp8, i, j, 1);
 				K[i][j][1] = f(imag_temp, real_temp, i, j, 1);
 				L[i][j][1] = g(real_temp, imag_temp, i, j, 1);
-				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
-				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
+				real_temp8[i][j][2] = real_solution[i][j][p - 1] + Dt * (-third * K8[i][j][0] + K8[i][j][1]);
+				imag_temp8[i][j][2] = imag_solution[i][j][p - 1] + Dt * (-third * L8[i][j][0] + L8[i][j][1]);
+				real_temp[i][j][2] = real_solution[i][j][p - 1] + 0.5 * Dt * K[i][j][1];
+				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + 0.5 * Dt * L[i][j][1];
 			}
 		}
 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
+				K8[i][j][2] = f(imag_temp8, real_temp8, i, j, 2);
+				L8[i][j][2] = g(real_temp8, imag_temp8, i, j, 2);
 				K[i][j][2] = f(imag_temp, real_temp, i, j, 2);
 				L[i][j][2] = g(real_temp, imag_temp, i, j, 2);
+				real_temp8[i][j][3] = real_solution[i][j][p - 1] + Dt * (K8[i][j][0] - K8[i][j][1] + K8[i][j][2]);
+				imag_temp8[i][j][3] = imag_solution[i][j][p - 1] + Dt * (L8[i][j][0] - L8[i][j][1] + L8[i][j][2]);
 				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
 				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
 			}	
@@ -371,10 +391,16 @@ int main(){
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
+				k_38 = f(imag_temp8, real_temp8, i, j, 3);
+				l_38 = g(real_temp8, imag_temp8, i, j, 3);
 				k_3 = f(imag_temp, real_temp, i, j, 3);
 				l_3 = g(real_temp, imag_temp, i, j, 3);
-				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
-				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
+				real_solution[i][j][p] = real_solution[i][j][p - 1] + \
+				0.3 * 1./8 * Dt * (K8[i][j][0] + 3 * K8[i][j][1] + 3 * K8[i][j][2] + k_38) + \
+				0.7 * 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
+				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + \
+				0.3 * 1./8 * Dt * (L8[i][j][0] + 3 * L8[i][j][1] + 3 * L8[i][j][2] + l_38) + \
+				0.7 * 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
 			}
 		}
 	}
