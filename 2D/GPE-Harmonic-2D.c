@@ -53,7 +53,7 @@ const double HY = YLENGTH / (SPY);
 const double Dt = TIME / (TIME_POINTS);
 const double WX = 7 * 2. * PI;
 const double WY = 476 * 2. * PI;
-const double G = 1000.;
+const double G = 100.;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
