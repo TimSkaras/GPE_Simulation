@@ -15,7 +15,7 @@ IMPORTANT RESULTS:
 
 
 TODO:
-1) Change the ITP from RK4 to standard FD
+1) Change the ITP from RK4 to standard FD -- done
 2) Modify RTP to have 2 RHS functions instead of 4
 3) Transfer RTP code into its own function
 4) Create stepTwo function for 2D
@@ -181,28 +181,8 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS]){
 
 // ----------------- Real Time Propagation Functions ---------------
 
-double f(double Psi_imag[SPX][SPY][TIME_POINTS], double Psi_real[SPX][SPY][TIME_POINTS], int i, int j, int p){	
-	// f is the function that gives the derivative for psi_real, which is why it is a function of imag_solution
-	
-	double imag_part = Psi_imag[i][j][p];
-	double real_part = Psi_real[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return -.5 * (Dxx(Psi_imag, i, j, p) + Dyy(Psi_imag, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
-}
-
-double g(double Psi_real[SPX][SPY][TIME_POINTS], double Psi_imag[SPX][SPY][TIME_POINTS], int i, int j, int p){	
-	// g gives the derivative for psi_imag, which is why it is a function of real_solution
-	
-	double imag_part = Psi_imag[i][j][p];
-	double real_part = Psi_real[i][j][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-
-	return .5 * (Dxx(Psi_real, i, j, p) + Dyy(Psi_real, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
-}
-
-double f_prime(double imag_temp[SPX][SPY][3], double real_temp[SPX][SPY][3], int i, int j, int p){
-	// f_prime gives the derivative for psi_real but for the K matrices because they need a function with a different argument
+double f(double imag_temp[SPX][SPY][4], double real_temp[SPX][SPY][4], int i, int j, int p){
+	// f gives the derivative for psi_real but for the K matrices because they need a function with a different argument
 	
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
@@ -211,8 +191,8 @@ double f_prime(double imag_temp[SPX][SPY][3], double real_temp[SPX][SPY][3], int
 	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
 }
 
-double g_prime(double real_temp[SPX][SPY][3], double imag_temp[SPX][SPY][3], int i, int j, int p){
-	// g_prime gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
+double g(double real_temp[SPX][SPY][4], double imag_temp[SPX][SPY][4], int i, int j, int p){
+	// g gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
 	
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
@@ -225,7 +205,7 @@ double g_prime(double real_temp[SPX][SPY][3], double imag_temp[SPX][SPY][3], int
 
 const double Delta_t = .000005; // This is the time step just used by the imaginary time propagation method
 
-double PsiNorm(double Array[SPX][SPY][3]){
+double PsiNorm(double Array[SPX][SPY][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
 
 	double integral = 0.0;
@@ -244,7 +224,7 @@ double initialGuess(double x, double y){
 	return x * (XLENGTH - x) * y * (YLENGTH - y);
 }
 
-void normalize(double Array[SPX][SPY][3]){
+void normalize(double Array[SPX][SPY][4]){
 	// Takes an array with a function in the first column and normalizes that function back to 1
 
 	double norm = sqrt( PsiNorm(Array) );
@@ -254,7 +234,7 @@ void normalize(double Array[SPX][SPY][3]){
 			Array[i][j][0] = Array[i][j][0] / norm;
 }
 
-double fgs(double Psi_real[SPX][SPY][3], int i, int j, int p){
+double fgs(double Psi_real[SPX][SPY][4], int i, int j, int p){
 	// f is the function that gives the derivative for psi_real, which is why it is a function of imag_solution
 
 		double real_part = Psi_real[i][j][p];
@@ -262,7 +242,7 @@ double fgs(double Psi_real[SPX][SPY][3], int i, int j, int p){
 		return 1./2 * (Dxx(Psi_real, i, j, p) + Dyy(Psi_real, i, j, p))  - 1/2. * (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH/2.0) * WY, 2)) * real_part - G * pow(real_part , 2) * real_part;
 }
 
-void findGroundState(double real_solution[SPX][SPY][3], int iterations) {
+void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
 	// Declare initial variables
 	double real_temp[SPX][SPY][3];
@@ -295,14 +275,13 @@ void findGroundState(double real_solution[SPX][SPY][3], int iterations) {
 	}
 }
 
-
 int main(){
 
 	// Declare initial variables
 	static double real_solution[SPX][SPY][TIME_POINTS]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
-	double real_temp[SPX][SPY][3];
+	double real_temp[SPX][SPY][4];
 	static double imag_solution[SPX][SPY][TIME_POINTS]; // Same as real solution but for the imaginary component of Psi
-	double imag_temp[spx][spy][3];
+	double imag_temp[spx][spy][4];
 	double K[spx][spy][3];
 	double L[spx][spy][3];
 	double k_3, l_3;
@@ -331,7 +310,7 @@ int main(){
 	}
 
 	// find the ground state
-	findGroundState(real_temp, 10000);
+	findGroundState(real_temp, 1000);
 
 	// Save ground state in a separate matrix for comparison and assign the ground state as initial condition to real soltuion
 		// If we save the ground state, we can run real time propagation and determine how much the initial condition changes
@@ -346,41 +325,51 @@ int main(){
 	// run real time propagation algorithm
 	for (int p = 1; p < time_points; ++p){
 
+
+		// Load solution into first column of temp matrices
+		for(int i = 0; i < spx; ++i)
+			for(int j = 0; j < spy; ++j){
+				real_temp[i][j][0] = real_solution[i][j][p - 1];
+				imag_temp[i][j][0] = imag_solution[i][j][p - 1];
+		}
+
+
+
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][0] = f(imag_solution, real_solution, i, j, p - 1);
-				L[i][j][0] = g(real_solution, imag_solution, i, j, p - 1);
-				real_temp[i][j][0] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
-				imag_temp[i][j][0] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
+				K[i][j][0] = f(imag_temp, real_temp, i, j, 0);
+				L[i][j][0] = g(real_temp, imag_temp, i, j, 0);
+				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
+				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
 			}
 		}
 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][1] = f_prime(imag_temp, real_temp, i, j, 0);
-				L[i][j][1] = g_prime(real_temp, imag_temp, i, j, 0);
-				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
-				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
+				K[i][j][1] = f(imag_temp, real_temp, i, j, 1);
+				L[i][j][1] = g(real_temp, imag_temp, i, j, 1);
+				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
+				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
 			}
 		}
 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][2] = f_prime(imag_temp, real_temp, i, j, 1);
-				L[i][j][2] = g_prime(real_temp, imag_temp, i, j, 1);
-				real_temp[i][j][2] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
-				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
+				K[i][j][2] = f(imag_temp, real_temp, i, j, 2);
+				L[i][j][2] = g(real_temp, imag_temp, i, j, 2);
+				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
+				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
 			}	
 		}
 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				k_3 = f_prime(imag_temp, real_temp, i, j, 2);
-				l_3 = g_prime(real_temp, imag_temp, i, j, 2);
+				k_3 = f(imag_temp, real_temp, i, j, 3);
+				l_3 = g(real_temp, imag_temp, i, j, 3);
 				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
 				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
 			}
