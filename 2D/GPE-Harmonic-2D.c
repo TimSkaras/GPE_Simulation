@@ -16,9 +16,10 @@ IMPORTANT RESULTS:
 
 TODO:
 1) Change the ITP from RK4 to standard FD -- done
-2) Modify RTP to have 2 RHS functions instead of 4
+2) Modify RTP to have 2 RHS functions instead of 4 -- done
 3) Transfer RTP code into its own function
 4) Create stepTwo function for 2D
+5) Fix memory problems
 
 */
 
@@ -47,7 +48,6 @@ TODO:
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
-const double Dt = TIME / (TIME_POINTS);
 const double WX = 7 * 2. * PI;
 const double WY = 476 * 2. * PI;
 const double G = .01;
@@ -58,6 +58,22 @@ const int time_points = TIME_POINTS;
 // How many spatial points are there
 const int spx = SPX;
 const int spy = SPY;
+
+struct plot_settings{
+	/*
+	*	This struct is used to pass the realTimeProp function settings for the plotting capabalities
+	*
+	*	MEMBERS:
+	*	plot3D -- integer value either 0 or 1, 1 turns plotting feature on and 0 turns it off
+	*	title -- string that tells the plotter what to display for the title of the solution plot
+	*	plot_normalization -- tells plotter whether to plot the normalization curve as well
+	*
+	*/
+	
+	int plot3D;
+	char * title;
+	int plot_normalization;
+};
 
 // ------------------ Auxiliary Functions ----------------
 
@@ -148,15 +164,16 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, double solution[
         fprintf(gnuplotPipe, "%s \n", commandsForGnuplot[i]); //Send commands to gnuplot one by one.
 }
 
-void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS]){
+void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time_points, double T){
 	/*
 	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
 	*/
 
-	double norm[TIME_POINTS];
-	double xvals[TIME_POINTS];
+	double norm[arg_time_points];
+	double xvals[arg_time_points];
+	double Dt = T/arg_time_points;
 
-	for(int p = 0; p < TIME_POINTS; ++p){
+	for(int p = 0; p < arg_time_points; ++p){
 		norm[p] = 0.0;
 		for(int i = 0; i < SPX; ++i)
 			for(int j = 0; j < SPY; ++j)
@@ -165,13 +182,13 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS]){
 	}
 
 	// the norm should be unity, so we can subtract off 1 to get the error at each point in time
-	for(int i = 0; i < TIME_POINTS; ++i)
+	for(int i = 0; i < arg_time_points; ++i)
 		norm[i] = norm[i] - 1.0;
 
 	// Now we plot the normalization array
 
 	// Create array of x values to plot then norm against
-	for (int p = 0; p < TIME_POINTS; ++p)
+	for (int p = 0; p < arg_time_points; ++p)
 		xvals[p] = p * Dt;
 	
 	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
@@ -199,6 +216,140 @@ double g(double real_temp[SPX][SPY][4], double imag_temp[SPX][SPY][4], int i, in
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
 
 	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+}
+
+void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][arg_time_points], double imag_solution[][SPY][arg_time_points], struct plot_settings plot){
+	/*
+	*	This function takes uses the array initialCondition as an initial condition and propagates that profile forward 
+	*	in real time using RK4. The function outputs the solution matrix, which has dimensions specified by space_points
+	*	constant and the arg_time_points argument parameter. This solver assumes periodic boundary conditions
+	*
+	*	INPUTS:
+	*	initialCondition -- array of length SPACE_POINTS
+	*	T -- double indicating the total desired length of simulated time
+	*	arg_time_points -- integer indicating the desired number of discretized points in time
+	*	real_solution -- empty two dimensional array of doubles that will be used to store the real part of the solution
+	*	imag_solution -- empty two dimensional array of doubles that will be used to store the imaginary part of the solution
+	*	plot -- struct carrying information to tell the plotter what to do. See declaration of struct for more information
+	*
+	*	OUTPUT:
+	*	Plots result if plot_on is turned on and returns solution solution matrix with dimensions SPACE_POINTS x arg_time_points
+	*
+	*/
+
+	double Dt = T/arg_time_points;
+
+	double real_temp[SPX][SPY][4];
+	double imag_temp[SPX][SPY][4];
+	double K[SPX][SPY][3];
+	double L[SPX][SPY][3];
+	double k_3, l_3;
+
+	double full_solution[SPX][SPY][arg_time_points]; // This will have the psi square solution so we can plot the results
+	
+	// Initialize arrays to clear junk out of arrays
+	for (int i = 0; i < spx; ++i){
+		for (int j = 0; j < spy; ++j){
+
+			for(int p = 0; p < time_points; ++p){
+				real_solution[i][j][p] = 0;
+				imag_solution[i][j][p] = 0;
+				full_solution[i][j][p] = 0.0;
+			}
+
+			for (int p = 0; p < 3; ++p){
+				real_temp[i][j][p] = 0;
+				imag_temp[i][j][p] = 0;
+				K[i][j][p] = 0;
+				L[i][j][p] = 0;
+			}
+		}
+	}
+
+	// Assign initial conditions
+	for (int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			real_solution[i][j][0] = initialCondition[i][j][0];
+
+	// Real Time Propagation
+	for (int p = 1; p < arg_time_points; ++p)
+	{
+		// Load solution into first column of temp matrices
+		for(int i = 0; i < spx; ++i)
+			for(int j = 0; j < spy; ++j){
+				real_temp[i][j][0] = real_solution[i][j][p - 1];
+				imag_temp[i][j][0] = imag_solution[i][j][p - 1];
+		}
+
+
+
+		for (int i = 0; i < spx; ++i){
+			for (int j = 0; j < spy; ++j){
+
+				K[i][j][0] = f(imag_temp, real_temp, i, j, 0);
+				L[i][j][0] = g(real_temp, imag_temp, i, j, 0);
+				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
+				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
+			}
+		}
+
+		for (int i = 0; i < spx; ++i){
+			for (int j = 0; j < spy; ++j){
+
+				K[i][j][1] = f(imag_temp, real_temp, i, j, 1);
+				L[i][j][1] = g(real_temp, imag_temp, i, j, 1);
+				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
+				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
+			}
+		}
+
+		for (int i = 0; i < spx; ++i){
+			for (int j = 0; j < spy; ++j){
+
+				K[i][j][2] = f(imag_temp, real_temp, i, j, 2);
+				L[i][j][2] = g(real_temp, imag_temp, i, j, 2);
+				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
+				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
+			}	
+		}
+
+		for (int i = 0; i < spx; ++i){
+			for (int j = 0; j < spy; ++j){
+
+				k_3 = f(imag_temp, real_temp, i, j, 3);
+				l_3 = g(real_temp, imag_temp, i, j, 3);
+				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
+				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
+			}
+		}
+	}
+
+	if (plot.plot3D == 1){
+		// Find the psi squared solution so we can plot the results
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				for(int k = 0; k < arg_time_points; ++k)
+					full_solution[i][j][k] = pow(real_solution[i][j][k], 2) + pow(imag_solution[i][j][k], 2);
+
+		// Now lets plot our results
+
+		// Set up commands for gnuplot
+		char plotCommand[100];
+		char title[100];
+		strcpy(plotCommand,"splot 'sol.temp' with lines");
+		sprintf(title, "set title \"");
+		strcat(title, plot.title);
+		strcat(title, "\"");
+		char * commandsForGnuplot[] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
+		int num_commands = 6;
+
+
+		plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, arg_time_points - 1,  "sol.temp");
+	}
+	if (plot.plot_normalization == 1){
+
+		plotNormalization(full_solution,arg_time_points, T);
+	}
 }
 
 // -------------Imaginary Time Propagation Functions------------
@@ -279,111 +430,19 @@ int main(){
 
 	// Declare initial variables
 	static double real_solution[SPX][SPY][TIME_POINTS]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
-	double real_temp[SPX][SPY][4];
 	static double imag_solution[SPX][SPY][TIME_POINTS]; // Same as real solution but for the imaginary component of Psi
-	double imag_temp[spx][spy][4];
-	double K[spx][spy][3];
-	double L[spx][spy][3];
-	double k_3, l_3;
+	double initialCondition[SPX][SPY][4];
 
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution.", .plot_normalization = 1};
 
-	static double full_solution[SPX][SPY][TIME_POINTS]; // This will have the psi square solution so we can plot the results
-	
-
-	// Initialize arrays to clear junk out of arrays
-	for (int i = 0; i < spx; ++i){
-		for (int j = 0; j < spy; ++j){
-
-			for(int p = 0; p < time_points; ++p){
-				real_solution[i][j][p] = 0;
-				imag_solution[i][j][p] = 0;
-				full_solution[i][j][p] = 0.0;
-			}
-
-			for (int p = 0; p < 3; ++p){
-				real_temp[i][j][p] = 0;
-				imag_temp[i][j][p] = 0;
-				K[i][j][p] = 0;
-				L[i][j][p] = 0;
-			}
-		}
-	}
 
 	// find the ground state
-	findGroundState(real_temp, 1000);
+	findGroundState(initialCondition, 1000);
 
-	// Save ground state in a separate matrix for comparison and assign the ground state as initial condition to real soltuion
-		// If we save the ground state, we can run real time propagation and determine how much the initial condition changes
-		// If it changes very little then this would confirm that we have found the ground state
-	double ground_state[SPX][SPY];
-	for (int i = 0; i < SPX; ++i)
-		for (int j = 0; j < SPY; ++j){
-			ground_state[i][j] = real_temp[i][j][0];
-			real_solution[i][j][0] = real_temp[i][j][0];
-		}
+	// Run RTP
+	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
-	// run real time propagation algorithm
-	for (int p = 1; p < time_points; ++p){
-
-
-		// Load solution into first column of temp matrices
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j){
-				real_temp[i][j][0] = real_solution[i][j][p - 1];
-				imag_temp[i][j][0] = imag_solution[i][j][p - 1];
-		}
-
-
-
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
-
-				K[i][j][0] = f(imag_temp, real_temp, i, j, 0);
-				L[i][j][0] = g(real_temp, imag_temp, i, j, 0);
-				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
-				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
-			}
-		}
-
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
-
-				K[i][j][1] = f(imag_temp, real_temp, i, j, 1);
-				L[i][j][1] = g(real_temp, imag_temp, i, j, 1);
-				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
-				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
-			}
-		}
-
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
-
-				K[i][j][2] = f(imag_temp, real_temp, i, j, 2);
-				L[i][j][2] = g(real_temp, imag_temp, i, j, 2);
-				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
-				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
-			}	
-		}
-
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
-
-				k_3 = f(imag_temp, real_temp, i, j, 3);
-				l_3 = g(real_temp, imag_temp, i, j, 3);
-				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
-				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
-			}
-		}
-	}
-
-	// Find the psi squared solution at the end time so we can plot the results
-	for (int i = 0; i < spx; ++i)
-		for (int j = 0; j < spy; ++j)
-			for(int p = 0; p < time_points; ++p)
-				full_solution[i][j][p] = pow(real_solution[i][j][p], 2) + pow(imag_solution[i][j][p], 2);
-
-
-	// Now lets plot our results
+	/*// Now lets plot our results
 
 	// Set up commands for gnuplot
 	char title[100];
@@ -407,9 +466,7 @@ int main(){
 	char * commandsForGnuplot2[] = {"set autoscale", "set title \"Difference in Ground State after Evolution\"", "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'difference.temp' with lines"};
 	num_commands = 7;
 
-	plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");
-
-	plotNormalization(full_solution);
+	plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");*/
 
 	return 0;
 }
