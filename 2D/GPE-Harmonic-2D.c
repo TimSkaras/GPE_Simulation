@@ -17,9 +17,9 @@ IMPORTANT RESULTS:
 TODO:
 1) Change the ITP from RK4 to standard FD -- done
 2) Modify RTP to have 2 RHS functions instead of 4 -- done
-3) Transfer RTP code into its own function
-4) Create stepTwo function for 2D
-5) Fix memory problems
+3) Transfer RTP code into its own function --done
+4) Create stepTwo function for 2D -- postpone
+5) Fix memory problems -- postpone
 
 */
 
@@ -30,13 +30,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.0001
-#define XLENGTH 4.0 //4.0
-#define YLENGTH 0.1 //0.1
-#define TIME_POINTS 10 	//number of time points
+#define TIME 0.001
+#define XLENGTH 21.0 //4.0
+#define YLENGTH 7.0 //0.1
+#define TIME_POINTS 100 	//number of time points
 #define SPACE_POINTS 150	//number of spatial points
-#define SPX 600 //600
-#define SPY 20 //20
+#define SPX 450 //600
+#define SPY 150 //20
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -48,9 +48,9 @@ TODO:
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
-const double WX = 7 * 2. * PI;
-const double WY = 476 * 2. * PI;
-const double G = .01;
+const double WX = 7./476;
+const double WY = 1.;
+const double G = 100.;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -340,7 +340,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		sprintf(title, "set title \"");
 		strcat(title, plot.title);
 		strcat(title, "\"");
-		char * commandsForGnuplot[] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
+		char * commandsForGnuplot[] = { title, "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , plotCommand};
 		int num_commands = 6;
 
 
@@ -437,7 +437,7 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 1000);
+	findGroundState(initialCondition, 15000);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
