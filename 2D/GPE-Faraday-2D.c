@@ -5,21 +5,13 @@ and then plots the solution using a surface plot command on gnuplot
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
 The preprocessor constant W is the harmonic potential constant omega
 
-IMPORTANT RESULTS:
-- When nonlinearity is turned off, the change in groundstate (30000 iterations) under real time propagation is less than 1 in 10^8
-- When nonlinearity is small (G~.01), oscillation in g.s. is not bad (1 in e-4) and normalization err is not bad either (1 in e-10) (time step = e-5)
-- When nonlinearity is small and (time step = 5e-6), norm error is order of magnitude better but oscillation in g.s. is no different
-- Now try case where we run imag time prop algorithm for twice as many iterations --- same result
-- Now try larger time step for imag time prop. Increased time step for ITP by factor of 4 -- result is unstable
-- Smaller time step for ITP by factor of 2, amplitude of oscillation is about half -- result shows promise
-
-
 TODO:
-1) Change the ITP from RK4 to standard FD -- done
-2) Modify RTP to have 2 RHS functions instead of 4 -- done
-3) Transfer RTP code into its own function --done
-4) Create stepTwo function for 2D -- postpone
-5) Fix memory problems -- postpone
+1) Create stepTwo function for 2D -- postpone
+2) Fix memory problems -- postpone
+3) Implement addNoise function -- done
+4) Modify RTP to support time dependent equations -- done
+5) Add integration to plotter so that time dependence can be included
+
 
 */
 
@@ -30,13 +22,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.001
-#define XLENGTH 21.0 //4.0
-#define YLENGTH 7.0 //0.1
-#define TIME_POINTS 100 	//number of time points
-#define SPACE_POINTS 150	//number of spatial points
-#define SPX 450 //600
-#define SPY 150 //20
+#define TIME 10.0
+#define XLENGTH 300.0 //4.0
+#define YLENGTH 10.0 //0.1
+#define TIME_POINTS 1500 	//number of time points
+#define SPX 800 //600
+#define SPY 20 //20
+#define NOISE_VOLUME 0.02
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -50,7 +42,10 @@ const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double WX = 7./476;
 const double WY = 1.;
-const double G = 100.;
+const double G = 1000.;
+const double OMEGA = 2.;
+const double EPS = 0.;
+const double WAVENUMBER_INPUT = .11;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -110,8 +105,8 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, double solution[
 
     int index_y = (int) ceil(spy/50.);
 	int new_y = (int) floor(spy /  ceil(spy/50.));
-	int index_x = (int) ceil(spx/90.);
-	int new_x = (int) floor(spx /  ceil(spx/90.));
+	int index_x = (int) ceil(spx/500.);
+	int new_x = (int) floor(spx /  ceil(spx/500.));
     double reduced_solution[new_x][new_y];
     
 
@@ -196,26 +191,67 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
 }
 
+void loadMatrix(double matrix[SPX][SPY][4], char * filename){
+	/*
+	Takes matrix data in filename and loads it into matrix
+	*/
+
+	FILE * f = fopen(filename, "r");
+
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			matrix[i][j][0] = 0;
+
+	fclose(f);
+}
+
 // ----------------- Real Time Propagation Functions ---------------
 
-double f(double imag_temp[SPX][SPY][4], double real_temp[SPX][SPY][4], int i, int j, int p){
+double f(double imag_temp[SPX][SPY][4], double real_temp[SPX][SPY][4], int i, int j, int p, double t){
 	// f gives the derivative for psi_real but for the K matrices because they need a function with a different argument
 	
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
+	double new_G = G * (1. +  EPS * sin(OMEGA * t));
 
-	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
+	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + new_G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
 }
 
-double g(double real_temp[SPX][SPY][4], double imag_temp[SPX][SPY][4], int i, int j, int p){
+double g(double real_temp[SPX][SPY][4], double imag_temp[SPX][SPY][4], int i, int j, int p, double t){
 	// g gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
 	
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
+	double new_G = G * (1. +  EPS * sin(OMEGA * t));
 
-	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+
+	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+}
+
+void addNoise(double initialCondition[SPX][SPY][4], double waveNumber){
+	/*
+	This function adds noise to the initial condition matrix
+	*/
+
+	// First we need to find a wavelength of noise that has an integer number of wavelengths within the space 
+	//  	of the trap and also is close to the assigned wavenumber in the function input
+	double num = waveNumber * XLENGTH / PI / 2.;
+	int n = (int) floor (num);
+
+	if (mod(n, 2) != 0)
+		n = (int) ceil(num);
+
+	double kp_eff = n * 2 * PI / XLENGTH;
+
+	// Noise should be small relative to homogeneous solution
+	double noise_volume = NOISE_VOLUME;
+
+	// Loop through initial condition and add noise
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX));
 }
 
 void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][arg_time_points], double imag_solution[][SPY][arg_time_points], struct plot_settings plot){
@@ -266,11 +302,16 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 	}
 
+	// Add the noise to the ground state
+	addNoise(initialCondition, WAVENUMBER_INPUT);
+
 	// Assign initial conditions
 	for (int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
 			real_solution[i][j][0] = initialCondition[i][j][0];
 
+
+	double t;
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
 	{
@@ -282,42 +323,45 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 
 
-
+		t = Dt * (p - 1); //Forward Euler step
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][0] = f(imag_temp, real_temp, i, j, 0);
-				L[i][j][0] = g(real_temp, imag_temp, i, j, 0);
+				K[i][j][0] = f(imag_temp, real_temp, i, j, 0, t);
+				L[i][j][0] = g(real_temp, imag_temp, i, j, 0, t);
 				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
 				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
 			}
 		}
 
+		t = t + .5 * Dt; //Add half a time step 
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][1] = f(imag_temp, real_temp, i, j, 1);
-				L[i][j][1] = g(real_temp, imag_temp, i, j, 1);
+				K[i][j][1] = f(imag_temp, real_temp, i, j, 1, t);
+				L[i][j][1] = g(real_temp, imag_temp, i, j, 1, t);
 				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
 				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
 			}
 		}
 
+		// t does not change for this step
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				K[i][j][2] = f(imag_temp, real_temp, i, j, 2);
-				L[i][j][2] = g(real_temp, imag_temp, i, j, 2);
+				K[i][j][2] = f(imag_temp, real_temp, i, j, 2, t);
+				L[i][j][2] = g(real_temp, imag_temp, i, j, 2, t);
 				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
 				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
 			}	
 		}
 
+		t = Dt * p; //Add full step for Backward Euler step
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
 
-				k_3 = f(imag_temp, real_temp, i, j, 3);
-				l_3 = g(real_temp, imag_temp, i, j, 3);
+				k_3 = f(imag_temp, real_temp, i, j, 3, t);
+				l_3 = g(real_temp, imag_temp, i, j, 3, t);
 				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
 				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
 			}
@@ -345,6 +389,21 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 
 		plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, arg_time_points - 1,  "sol.temp");
+
+
+		// We also want to compare how much the ground state has changed
+
+		// First form a difference matrix
+		double difference_matrix[SPX][SPY][TIME_POINTS];
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				difference_matrix[i][j][0] = pow(initialCondition[i][j][0], 2) - full_solution[i][j][time_points - 1];
+
+		char * commandsForGnuplot2[] = {"set autoscale", "set title \"Difference in Ground State after Evolution\"", "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'difference.temp' with lines"};
+		num_commands = 7;
+
+		plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");
+
 	}
 	if (plot.plot_normalization == 1){
 
@@ -354,7 +413,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .000005; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .0002; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -424,6 +483,19 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 		// Now normalize the solution back to 1
 		normalize(real_solution);
 	}
+
+	// Write the g.s. to a separate file
+	FILE * f = fopen("groundState.txt","w");
+
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j){
+
+			if (j < SPY - 1)
+				fprintf(f, "%e ", real_solution[i][j][0]);
+			else
+				fprintf(f, "%e\n", real_solution[i][j][0]);
+		}
+	fclose(f);
 }
 
 int main(){
@@ -437,36 +509,11 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 15000);
+	findGroundState(initialCondition, 80000);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
-	/*// Now lets plot our results
-
-	// Set up commands for gnuplot
-	char title[100];
-	sprintf(title, "set title \"Schrodinger Equation Harmonic Trap (Imag Time) (Runge Kutta)");
-	char * commandsForGnuplot[] = { title, "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'sol.temp' with lines"};
-	int num_commands = 6;
-
-
-	plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, TIME_POINTS - 1, "sol.temp");
-
-	printf("Space Step: %e \nTime Step: %e %e \nRatio: %f\n", HX, Dt, 0, HX / Dt);		
-
-	// We also want to compare how much the ground state has changed
-
-	// First form a difference matrix
-	double difference_matrix[SPX][SPY][TIME_POINTS];
-	for (int i = 0; i < SPX; ++i)
-		for (int j = 0; j < SPY; ++j)
-			difference_matrix[i][j][0] = pow(ground_state[i][j], 2) - full_solution[i][j][time_points - 1];
-
-	char * commandsForGnuplot2[] = {"set autoscale", "set title \"Difference in Ground State after Evolution\"", "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'difference.temp' with lines"};
-	num_commands = 7;
-
-	plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");*/
 
 	return 0;
 }
