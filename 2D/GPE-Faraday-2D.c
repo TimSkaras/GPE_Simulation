@@ -22,13 +22,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 10.0
+#define TIME 15.0
 #define XLENGTH 300.0 //4.0
 #define YLENGTH 10.0 //0.1
-#define TIME_POINTS 1500 	//number of time points
-#define SPX 800 //600
-#define SPY 20 //20
-#define NOISE_VOLUME 0.02
+#define TIME_POINTS 4000 //number of time points
+#define SPX 1000 //600
+#define SPY 30 //20
+#define NOISE_VOLUME 0.06
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -44,8 +44,8 @@ const double WX = 7./476;
 const double WY = 1.;
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.;
-const double WAVENUMBER_INPUT = .11;
+const double EPS = 0.1;
+const double WAVENUMBER_INPUT = 1.5;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -80,7 +80,7 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotSurface(char * commandsForGnuplot[], int num_commands, double solution[SPX][SPY][TIME_POINTS], int spx, int spy, int time_index, char * output_file ){
+void plotSurface(char * commandsForGnuplot[], int num_commands, int spx, int spy, int arg_time_points, double solution[spx][spx][arg_time_points], int time_index, char * output_file ){
 	/*
 	This function gives a 3-dimensional plot of data to 1+1D problem. Plots position versus time. Solution is specified using a 2-dimensional array where each row is a position 
 	in space and each column is a point in time. Converts the solution from a matrix specifying the z-value at each point and converts it into a file listing each point by 
@@ -159,6 +159,127 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, double solution[
         fprintf(gnuplotPipe, "%s \n", commandsForGnuplot[i]); //Send commands to gnuplot one by one.
 }
 
+void plotSurface1D(char * commandsForGnuplot[], int num_commands, int space_points, int arg_time_points, double solution[][arg_time_points], double T, char * output_file ){
+	/*
+	This function gives a 3-dimensional plot of data to 1+1D problem. Plots position versus time. Solution is specified using a 2-dimensional array where each row is a position 
+	in space and each column is a point in time. Converts the solution from a matrix specifying the z-value at each point and converts it into a file listing each point by 
+	its x,y,z coordinate
+
+    INPUT: 
+    commandsForGnuplot -- array of strings, element of which is a valid gnuplot command
+    num_commands -- an integer that gives the number of strings in the commandsForGnuplot array
+   	solution -- 2-dimensional array matching the description provided above
+	space_points -- integer describing the number of points in space, which should equal the number of rows in solution
+	arg_time_points -- integer describing the number of points in time, which should equal the number of columns in solution
+	T -- double representing length of time simulated    
+	output_file -- filename with extension included that gives the name of the desired file 
+
+    OUTPUT:
+    Returns nothing but generates the desired plot in a new window
+
+    EXAMPLE INPUTS:
+    char * commandsForGnuplot[] = {"set title \"TITLE\"", "splot 'data.temp' with lines"};
+    double solution[][2] = {{1,2,3}, {2,4,6}};
+	*/
+
+    double Dt = T / arg_time_points;
+
+	double time_samples = 70.;
+	double space_samples = 300.;
+
+    int index_t = (int) ceil(arg_time_points/time_samples);
+	int new_time_points = (int) floor(arg_time_points /  ceil(arg_time_points/time_samples));
+	int index_s = (int) ceil(space_points/space_samples);
+	int new_spatial_points = (int) floor(space_points /  ceil(space_points/space_samples));
+    double reduced_solution[new_spatial_points + 1][new_time_points];
+    
+
+    // If solution has too many points, we need to take some out so that the plot has perceptible contours
+    // There should always be more time points than space points
+
+    // printf("index_t: %d \n T_new: %d \n", index_t, new_time_points);
+    if (space_points * arg_time_points > 1500)
+    {	
+		for (int i = 0; i < new_spatial_points; ++i){
+
+    		for (int p = 0; p < new_time_points; ++p)
+    			reduced_solution[i][p] = solution[i * index_s][p * index_t];
+    	}
+    }
+
+    // Add last row for cosmetic purposes
+    for (int j = 0; j < new_time_points; ++j)
+    {
+    	reduced_solution[new_spatial_points][j] = reduced_solution[0][j];
+    }
+
+    FILE * temp = fopen(output_file, "w");
+    /*Opens an interface that one can use to send commands as if they were typing into the
+     *     gnuplot command line.  "The -persistent" keeps the plot open even after your
+     *     C program terminates.
+     */
+    FILE * gnuplotPipe = popen("gnuplot -persistent", "w");
+    
+
+    if (space_points * arg_time_points <= 1500)
+    {
+	    for (int i=0; i < space_points; i++)
+	    {
+	        for (int j = 0; j < arg_time_points; ++j)
+	            	fprintf(temp, "%e %e %.8e \n", HX * i, Dt * j , solution[i][j]); //Write the data to a temporary file
+
+	        fprintf(temp, "\n");
+	    }
+    }
+    else{
+
+	    for (int i=0; i < new_spatial_points + 1; i++){
+
+	        for (int j = 0; j < new_time_points; ++j)
+				fprintf(temp, "%e %e %.8e \n", index_s * HX * i, index_t * Dt * j , reduced_solution[i][j]); //Write the data to a temporary file
+
+			fprintf(temp, "\n");
+		}
+	}
+
+    fclose(temp);
+
+    for (int i=0; i < num_commands; i++)
+        fprintf(gnuplotPipe, "%s \n", commandsForGnuplot[i]); //Send commands to gnuplot one by one.
+}
+
+void plotTimeDependence(double solution[SPX][SPY][TIME_POINTS], int spx, int spy, struct plot_settings plot){
+
+	double solution1D[SPX][TIME_POINTS];
+
+	double integral_holder = 0.0;
+	// Integrate over the y-axis
+	for(int p = 0; p < TIME_POINTS; ++p)	
+		for(int i = 0; i < SPX; ++i){
+			
+			integral_holder = 0.0;
+
+			for (int j = 0; j < SPY; ++j)
+				integral_holder = integral_holder + solution[i][j][p] * HY;	
+
+			solution1D[i][p] = integral_holder;
+		}
+
+	// Set up commands for gnuplot
+	char plotCommand[100];
+	char title[100];
+	// sprintf(plotCommand, "plot [0:%d] [-2:2] 'sol.temp' ", TIME);
+	strcpy(plotCommand,"splot '1Dsol.temp' with lines");
+	sprintf(title, "set title \"");
+	strcat(title, plot.title);
+	strcat(title, "\"");
+	char * commandsForGnuplot[] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
+	int num_commands = 6;
+
+
+	plotSurface1D(commandsForGnuplot, num_commands, spx, TIME_POINTS, solution1D, TIME,  "1Dsol.temp");
+}
+
 void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time_points, double T){
 	/*
 	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
@@ -177,9 +298,10 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time
 	}
 
 	// the norm should be unity, so we can subtract off 1 to get the error at each point in time
-	for(int i = 0; i < arg_time_points; ++i)
-		norm[i] = norm[i] - 1.0;
+	for(int i = 1; i < arg_time_points; ++i)
+		norm[i] = norm[i] - norm[0];
 
+	norm[0] = norm[0] - norm[0];
 	// Now we plot the normalization array
 
 	// Create array of x values to plot then norm against
@@ -377,32 +499,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 		// Now lets plot our results
 
-		// Set up commands for gnuplot
-		char plotCommand[100];
-		char title[100];
-		strcpy(plotCommand,"splot 'sol.temp' with lines");
-		sprintf(title, "set title \"");
-		strcat(title, plot.title);
-		strcat(title, "\"");
-		char * commandsForGnuplot[] = { title, "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , plotCommand};
-		int num_commands = 6;
-
-
-		plotSurface(commandsForGnuplot, num_commands, full_solution, spx, spy, arg_time_points - 1,  "sol.temp");
-
-
-		// We also want to compare how much the ground state has changed
-
-		// First form a difference matrix
-		double difference_matrix[SPX][SPY][TIME_POINTS];
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				difference_matrix[i][j][0] = pow(initialCondition[i][j][0], 2) - full_solution[i][j][time_points - 1];
-
-		char * commandsForGnuplot2[] = {"set autoscale", "set title \"Difference in Ground State after Evolution\"", "set xlabel \"X-Axis\"", "show xlabel", "set ylabel \"Y-Axis\"", "show ylabel" , "splot 'difference.temp' with lines"};
-		num_commands = 7;
-
-		plotSurface(commandsForGnuplot2, num_commands, difference_matrix, spx, spy, 0, "difference.temp");
+		plotTimeDependence(full_solution, SPX, SPY, plot);
 
 	}
 	if (plot.plot_normalization == 1){
@@ -454,9 +551,6 @@ double fgs(double Psi_real[SPX][SPY][4], int i, int j, int p){
 
 void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
-	// Declare initial variables
-	double real_temp[SPX][SPY][3];
-
 	// Assign initial guess
 	for (int i = 0; i < SPX; ++i)
 		for (int j = 0; j < SPY; ++j)
@@ -500,12 +594,13 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
 int main(){
 
+	printf("test\n");
 	// Declare initial variables
 	static double real_solution[SPX][SPY][TIME_POINTS]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
 	static double imag_solution[SPX][SPY][TIME_POINTS]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][4];
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution.", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
 
 	// find the ground state
