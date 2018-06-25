@@ -7,8 +7,11 @@ The preprocessor constant W is the harmonic potential constant omega
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) Fix memory problems -- postpone
-
+2) Fix memory problems by storing past data as 1D
+	A) Get rid of solution matrices replace with a 4 item -- done
+	B) Integrate old solutions and save them in 2D matrix -- done
+	C) Fix plotTimeDependence -- done
+	D) Fix plotNormalization -- done
 
 */
 
@@ -19,7 +22,7 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 15.0
+#define TIME 0.00150
 #define XLENGTH 300.0 //4.0
 #define YLENGTH 10.0 //0.1
 #define TIME_POINTS 4000 //number of time points
@@ -77,22 +80,7 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotTimeDependence(double solution[SPX][SPY][TIME_POINTS], int spx, int spy, struct plot_settings plot){
-
-	double solution1D[SPX][TIME_POINTS];
-
-	double integral_holder = 0.0;
-	// Integrate over the y-axis
-	for(int p = 0; p < TIME_POINTS; ++p)	
-		for(int i = 0; i < SPX; ++i){
-			
-			integral_holder = 0.0;
-
-			for (int j = 0; j < SPY; ++j)
-				integral_holder = integral_holder + solution[i][j][p] * HY;	
-
-			solution1D[i][p] = integral_holder;
-		}
+void plotTimeDependence(double solution1D[SPX][TIME_POINTS], int spx, int spy, struct plot_settings plot){
 
 	// Set up commands for gnuplot
 	char plotCommand[100];
@@ -111,7 +99,7 @@ void plotTimeDependence(double solution[SPX][SPY][TIME_POINTS], int spx, int spy
 	plotSurface2DReduced(commands, info , spx, TIME_POINTS, solution1D);
 }
 
-void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time_points, double T){
+void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_points], double T){
 	/*
 	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
 	*/
@@ -123,9 +111,8 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time
 	for(int p = 0; p < arg_time_points; ++p){
 		norm[p] = 0.0;
 		for(int i = 0; i < SPX; ++i)
-			for(int j = 0; j < SPY; ++j)
-				norm[p] = norm[p] + full_solution[i][j][p];
-		norm[p] = norm[p] * HX * HY;
+			norm[p] = norm[p] + solution1D[i][p];
+		norm[p] = norm[p] * HX;
 	}
 
 	// the norm should be unity, so we can subtract off 1 to get the error at each point in time
@@ -142,6 +129,20 @@ void plotNormalization(double full_solution[SPX][SPY][TIME_POINTS], int arg_time
 	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
 	int num_commands = 4;
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
+}
+
+double contraction(double solution[SPX][SPY][4], int i ){
+	/*
+	This function will take a 3D matrix and contract across the y dimension at a given x- index (integer i) -- assumed to be on index 0 for z-axis
+	*/
+
+	double integral_holder = 0.0;
+	// Integrate over the y-axis
+
+	for (int j = 0; j < SPY; ++j)
+		integral_holder = integral_holder + solution[i][j][0];	
+
+	return integral_holder * HY;
 }
 
 void loadMatrix(double matrix[SPX][SPY][4], char * filename){
@@ -207,7 +208,7 @@ void addNoise(double initialCondition[SPX][SPY][4], double waveNumber){
 			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX));
 }
 
-void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][arg_time_points], double imag_solution[][SPY][arg_time_points], struct plot_settings plot){
+void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][4], double imag_solution[][SPY][4], struct plot_settings plot){
 	/*
 	*	This function takes uses the array initialCondition as an initial condition and propagates that profile forward 
 	*	in real time using RK4. The function outputs the solution matrix, which has dimensions specified by space_points
@@ -234,19 +235,17 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	double L[SPX][SPY][3];
 	double k_3, l_3;
 
-	double full_solution[SPX][SPY][arg_time_points]; // This will have the psi square solution so we can plot the results
+	double full_solution[SPX][SPY][4];
+	double solution1D[SPX][arg_time_points]; //Store results so they can be plotted
 	
 	// Initialize arrays to clear junk out of arrays
 	for (int i = 0; i < spx; ++i){
 		for (int j = 0; j < spy; ++j){
-
-			for(int p = 0; p < time_points; ++p){
+			for (int p = 0; p < 3; ++p){
 				real_solution[i][j][p] = 0;
 				imag_solution[i][j][p] = 0;
 				full_solution[i][j][p] = 0.0;
-			}
 
-			for (int p = 0; p < 3; ++p){
 				real_temp[i][j][p] = 0;
 				imag_temp[i][j][p] = 0;
 				K[i][j][p] = 0;
@@ -260,9 +259,13 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 	// Assign initial conditions
 	for (int i = 0; i < SPX; ++i)
-		for(int j = 0; j < SPY; ++j)
+		for(int j = 0; j < SPY; ++j){
 			real_solution[i][j][0] = initialCondition[i][j][0];
-
+			full_solution[i][j][0] = pow(initialCondition[i][j][0], 2);
+		}
+	
+	for(int i = 0; i < SPX; ++i)
+		solution1D[i][0] = contraction(full_solution, i);
 
 	double t;
 	// Real Time Propagation
@@ -271,8 +274,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		// Load solution into first column of temp matrices
 		for(int i = 0; i < spx; ++i)
 			for(int j = 0; j < spy; ++j){
-				real_temp[i][j][0] = real_solution[i][j][p - 1];
-				imag_temp[i][j][0] = imag_solution[i][j][p - 1];
+				real_temp[i][j][0] = real_solution[i][j][0];
+				imag_temp[i][j][0] = imag_solution[i][j][0];
 		}
 
 
@@ -282,8 +285,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 				K[i][j][0] = f(imag_temp, real_temp, i, j, 0, t);
 				L[i][j][0] = g(real_temp, imag_temp, i, j, 0, t);
-				real_temp[i][j][1] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][0]; 
-				imag_temp[i][j][1] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][0];
+				real_temp[i][j][1] = real_solution[i][j][0] + .5 * Dt * K[i][j][0]; 
+				imag_temp[i][j][1] = imag_solution[i][j][0] + .5 * Dt * L[i][j][0];
 			}
 		}
 
@@ -293,8 +296,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 				K[i][j][1] = f(imag_temp, real_temp, i, j, 1, t);
 				L[i][j][1] = g(real_temp, imag_temp, i, j, 1, t);
-				real_temp[i][j][2] = real_solution[i][j][p - 1] + .5 * Dt * K[i][j][1];
-				imag_temp[i][j][2] = imag_solution[i][j][p - 1] + .5 * Dt * L[i][j][1];
+				real_temp[i][j][2] = real_solution[i][j][0] + .5 * Dt * K[i][j][1];
+				imag_temp[i][j][2] = imag_solution[i][j][0] + .5 * Dt * L[i][j][1];
 			}
 		}
 
@@ -304,8 +307,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 				K[i][j][2] = f(imag_temp, real_temp, i, j, 2, t);
 				L[i][j][2] = g(real_temp, imag_temp, i, j, 2, t);
-				real_temp[i][j][3] = real_solution[i][j][p - 1] + Dt * K[i][j][2];
-				imag_temp[i][j][3] = imag_solution[i][j][p - 1] + Dt * L[i][j][2];
+				real_temp[i][j][3] = real_solution[i][j][0] + Dt * K[i][j][2];
+				imag_temp[i][j][3] = imag_solution[i][j][0] + Dt * L[i][j][2];
 			}	
 		}
 
@@ -315,10 +318,29 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 				k_3 = f(imag_temp, real_temp, i, j, 3, t);
 				l_3 = g(real_temp, imag_temp, i, j, 3, t);
-				real_solution[i][j][p] = real_solution[i][j][p - 1] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
-				imag_solution[i][j][p] = imag_solution[i][j][p - 1] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
+				real_solution[i][j][1] = real_solution[i][j][0] + 1./6 * Dt * (K[i][j][0] + 2 * K[i][j][1] + 2 * K[i][j][2] + k_3);
+				imag_solution[i][j][1] = imag_solution[i][j][0] + 1./6 * Dt * (L[i][j][0] + 2 * L[i][j][1] + 2 * L[i][j][2] + l_3);
 			}
 		}
+
+		// Add new iteration to full solution
+		for(int i = 0; i < SPX; ++i)
+			for(int j = 0; j < SPY; ++j)
+				full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
+
+		// Contract full solution and save it to solution1D
+		for(int i = 0; i < SPX; ++i)
+			solution1D[i][p] = contraction(full_solution, i);
+
+		// Move new iteration in real/imag solution back an index to restart process
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+			{
+				real_solution[i][j][0] = real_solution[i][j][1];
+				imag_solution[i][j][0] = imag_solution[i][j][1];
+			}
+
+
 	}
 
 	if (plot.plot3D == 1){
@@ -331,12 +353,12 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 		// Now lets plot our results
 
-		plotTimeDependence(full_solution, SPX, SPY, plot);
+		plotTimeDependence(solution1D, SPX, SPY, plot);
 
 	}
 	if (plot.plot_normalization == 1){
 
-		plotNormalization(full_solution,arg_time_points, T);
+		plotNormalization(arg_time_points, solution1D, T);
 	}
 }
 
@@ -426,10 +448,9 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
 int main(){
 
-	printf("test\n");
 	// Declare initial variables
-	static double real_solution[SPX][SPY][TIME_POINTS]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
-	static double imag_solution[SPX][SPY][TIME_POINTS]; // Same as real solution but for the imaginary component of Psi
+	static double real_solution[SPX][SPY][4]; // This will be solution matrix where each column is a discrete point in time and each row a discrete point in space
+	static double imag_solution[SPX][SPY][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][4];
 
 	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
