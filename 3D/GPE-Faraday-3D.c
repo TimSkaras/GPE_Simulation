@@ -18,30 +18,38 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME .005
-#define XLENGTH 300.0 //4.0
+#define TIME 25.0
+#define XLENGTH 10.0 //4.0
 #define YLENGTH 10.0 //0.1
-#define TIME_POINTS 200 //number of time points
-#define SPX 1300 //600
-#define SPY 40 //20
+#define ZLENGTH 300.0
+#define TIME_POINTS 5000 //number of time points
+#define SPX 30 //600
+#define SPY 30 //20
+#define SPZ 1000
 #define NOISE_VOLUME 0.06
 
-#define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
-		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
+#define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
+		30. * array[mod(x , SPX)][y][z][pee] + 16. * array[mod(x - 1, SPX)][y][z][pee] +  -1 * array[mod(x - 2, SPX)][y][z][pee]) / (12. * pow(HX, 2)) )
 ;
 
-#define Dyy(array, x, y, pee) ( (-1. * array[x][mod(y + 2, SPY)][pee] + 16.* array[x][mod(y + 1, SPY)][pee] - \
-		30. * array[x][mod(y , SPY)][pee] + 16. * array[x][mod(y - 1, SPY)][pee] +  -1 * array[x][mod(y - 2, SPY)][pee]) / (12. * pow(HY, 2)) )
+#define Dyy(array, x, y, z, pee) ( (-1. * array[x][mod(y + 2, SPY)][z][pee] + 16.* array[x][mod(y + 1, SPY)][z][pee] - \
+		30. * array[x][mod(y , SPY)][z][pee] + 16. * array[x][mod(y - 1, SPY)][z][pee] +  -1 * array[x][mod(y - 2, SPY)][z][pee]) / (12. * pow(HY, 2)) )
+;
+
+#define Dzz(array, x, y ,z , pee) ( (-1. * array[x][y][mod(z + 2, SPY)][pee] + 16.* array[x][y][mod(z + 1, SPY)][pee] - \
+		30. * array[x][y][mod(z , SPY)][pee] + 16. * array[x][y][mod(z - 1, SPY)][pee] +  -1 * array[x][y][mod(z - 2, SPY)][pee]) / (12. * pow(HZ, 2)) )
 ;
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
+const double HZ = ZLENGTH / (SPZ);
 const double WX = 7./476;
-const double WY = 1.;
+const double WY = 7./476;
+const double WZ = 1.
 const double G = 1000.;
 const double OMEGA = 2.;
 const double EPS = 0.2;
-const double WAVENUMBER_INPUT = 0.6;
+const double WAVENUMBER_INPUT = 1.1;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -49,6 +57,7 @@ const int time_points = TIME_POINTS;
 // How many spatial points are there
 const int spx = SPX;
 const int spy = SPY;
+const int spz = SPZ;
 
 struct plot_settings{
 	/*
@@ -76,7 +85,7 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotTimeDependence(double solution1D[SPX][TIME_POINTS], int spx, int spy, struct plot_settings plot){
+void plotTimeDependence(double solution1D[SPZ][TIME_POINTS], int spz, struct plot_settings plot){
 
 	// Set up commands for gnuplot
 	char plotCommand[100];
@@ -89,13 +98,13 @@ void plotTimeDependence(double solution1D[SPX][TIME_POINTS], int spx, int spy, s
 	char * commands[15] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
 	int num_commands = 6;
 
-	struct plot_information info = { .num_commands = num_commands, \
-		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .T = TIME};
+	struct plot_information3D info = { .num_commands = num_commands, \
+		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .z_length = ZLENGTH, .T = TIME};
 
 	plotSurface2DReduced(commands, info , spx, TIME_POINTS, solution1D);
 }
 
-void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_points], double T){
+void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
 	/*
 	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
 	*/
@@ -232,7 +241,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	double k_3, l_3;
 
 	double full_solution[SPX][SPY][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
-	double solution1D[SPX][arg_time_points/10]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
+	double solution1D[SPX][arg_time_points]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
 	
 	// Initialize arrays to clear junk out of arrays
 	for (int i = 0; i < spx; ++i){
@@ -325,9 +334,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 				full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
 
 		// Contract full solution and save it to solution1D
-		if (mod(p, 10) == 0)
-			for(int i = 0; i < SPX; ++i)
-				solution1D[i][p] = contraction(full_solution, i);
+		for(int i = 0; i < SPX; ++i)
+			solution1D[i][p] = contraction(full_solution, i);
 
 		// Move new iteration in real/imag solution back an index to restart process
 		for(int i = 0; i < SPX; ++i)
@@ -454,7 +462,7 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 20000);
+	findGroundState(initialCondition, 800);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);

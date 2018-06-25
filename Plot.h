@@ -21,6 +21,16 @@ struct plot_information
     double T;
 };
 
+struct plot_information3D
+{
+    int num_commands;
+    char * output_file;
+    double x_length;
+    double y_length;
+    double z_length;
+    double T;
+};
+
 void plotFunction(char * commandsForGnuplot[], int num_commands, double xvals[], double yvals[], int num_points, char * output_file )
 {   /*
     
@@ -201,7 +211,7 @@ void plotSurface2DReduced(char * commandsForGnuplot[], struct plot_information i
     double HX = info.x_length/space_points;
 
     double time_samples = 70.;
-    double space_samples = 300.;
+    double space_samples = 400.;
 
     int index_t = (int) ceil(arg_time_points/time_samples);
     int new_time_points = (int) floor(arg_time_points /  ceil(arg_time_points/time_samples));
