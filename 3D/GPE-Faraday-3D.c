@@ -101,7 +101,7 @@ void plotTimeDependence(double solution1D[SPZ][TIME_POINTS], int spz, struct plo
 	struct plot_information3D info = { .num_commands = num_commands, \
 		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .z_length = ZLENGTH, .T = TIME};
 
-	plotSurface2DReduced(commands, info , spx, TIME_POINTS, solution1D);
+	plotSurface3DReduced(commands, info , spx, TIME_POINTS, solution1D);
 }
 
 void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
@@ -115,9 +115,9 @@ void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_poin
 
 	for(int p = 0; p < arg_time_points; ++p){
 		norm[p] = 0.0;
-		for(int i = 0; i < SPX; ++i)
+		for(int i = 0; i < SPZ; ++i)
 			norm[p] = norm[p] + solution1D[i][p];
-		norm[p] = norm[p] * HX;
+		norm[p] = norm[p] * HZ;
 	}
 
 	// the norm should be unity, so we can subtract off 1 to get the error at each point in time
@@ -136,18 +136,19 @@ void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_poin
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
 }
 
-double contraction(double solution[SPX][SPY][4], int i ){
+double contraction(double solution[SPX][SPY][4], int z_index ){
 	/*
-	This function will take a 3D matrix and contract across the y dimension at a given x- index (integer i) -- assumed to be on index 0 for z-axis
+	This function will take a 3D matrix and contract across the y dimension at a given z- index (integer z_index) -- assumed to be on index 0 for 4th-axis
 	*/
 
 	double integral_holder = 0.0;
-	// Integrate over the y-axis
+	// Integrate over the x and y-axis
 
-	for (int j = 0; j < SPY; ++j)
-		integral_holder = integral_holder + solution[i][j][0];	
+	for(int i = 0; i < SPX; ++i)
+		for (int j = 0; j < SPY; ++j)
+			integral_holder = integral_holder + solution[i][j][z_index][0];	
 
-	return integral_holder * HY;
+	return integral_holder * HY * HX;
 }
 
 void loadMatrix(double matrix[SPX][SPY][4], char * filename){
