@@ -18,11 +18,11 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME .005
+#define TIME 200.00
 #define XLENGTH 300.0 //4.0
 #define YLENGTH 10.0 //0.1
-#define TIME_POINTS 200 //number of time points
-#define SPX 1300 //600
+#define TIME_POINTS 80000 //number of time points
+#define SPX 2000 //600
 #define SPY 40 //20
 #define NOISE_VOLUME 0.06
 
@@ -41,7 +41,7 @@ const double WY = 1.;
 const double G = 1000.;
 const double OMEGA = 2.;
 const double EPS = 0.2;
-const double WAVENUMBER_INPUT = 0.6;
+const double WAVENUMBER_INPUT = 0.7;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -76,7 +76,7 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotTimeDependence(double solution1D[SPX][TIME_POINTS], int spx, int spy, struct plot_settings plot){
+void plotTimeDependence( int spx, int spy, int arg_time_points, double solution1D[SPX][arg_time_points], struct plot_settings plot){
 
 	// Set up commands for gnuplot
 	char plotCommand[100];
@@ -92,7 +92,7 @@ void plotTimeDependence(double solution1D[SPX][TIME_POINTS], int spx, int spy, s
 	struct plot_information info = { .num_commands = num_commands, \
 		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .T = TIME};
 
-	plotSurface2DReduced(commands, info , spx, TIME_POINTS, solution1D);
+	plotSurface2DReduced(commands, info , spx, arg_time_points, solution1D);
 }
 
 void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_points], double T){
@@ -124,7 +124,7 @@ void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_poin
 	
 	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
 	int num_commands = 4;
-	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
+	plotFunction(commandsForGnuplot, num_commands, xvals, norm, arg_time_points, "norm.temp");
 }
 
 double contraction(double solution[SPX][SPY][4], int i ){
@@ -201,7 +201,7 @@ void addNoise(double initialCondition[SPX][SPY][4], double waveNumber){
 	// Loop through initial condition and add noise
 	for(int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
-			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX));
+			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX) * exp(- .006 * pow(i * HX - XLENGTH/2., 2) ));
 }
 
 void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][4], double imag_solution[][SPY][4], struct plot_settings plot){
@@ -230,9 +230,12 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	double K[SPX][SPY][3];
 	double L[SPX][SPY][3];
 	double k_3, l_3;
+	int reduction_coeff = 20;
 
+	// printf("%d\n", arg_time_points/reduction_coeff);
+	
 	double full_solution[SPX][SPY][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
-	double solution1D[SPX][arg_time_points/10]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
+	double solution1D[SPX][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
 	
 	// Initialize arrays to clear junk out of arrays
 	for (int i = 0; i < spx; ++i){
@@ -325,9 +328,10 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 				full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
 
 		// Contract full solution and save it to solution1D
-		if (mod(p, 10) == 0)
+		if (mod(p, reduction_coeff) == 0)
 			for(int i = 0; i < SPX; ++i)
-				solution1D[i][p] = contraction(full_solution, i);
+				solution1D[i][p/reduction_coeff] = contraction(full_solution, i);
+	
 
 		// Move new iteration in real/imag solution back an index to restart process
 		for(int i = 0; i < SPX; ++i)
@@ -341,21 +345,14 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	}
 
 	if (plot.plot3D == 1){
-		// Find the psi squared solution so we can plot the results
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < arg_time_points; ++k)
-					full_solution[i][j][k] = pow(real_solution[i][j][k], 2) + pow(imag_solution[i][j][k], 2);
-
 
 		// Now lets plot our results
-
-		plotTimeDependence(solution1D, SPX, SPY, plot);
+		plotTimeDependence( SPX, SPY, arg_time_points/reduction_coeff, solution1D, plot);
 
 	}
 	if (plot.plot_normalization == 1){
 
-		plotNormalization(arg_time_points, solution1D, T);
+		plotNormalization(arg_time_points/reduction_coeff, solution1D, T);
 	}
 }
 
@@ -454,7 +451,7 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 20000);
+	findGroundState(initialCondition, 800);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
