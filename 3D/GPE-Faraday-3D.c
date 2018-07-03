@@ -5,9 +5,12 @@ and then plots the solution using a surface plot command on gnuplot
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
 The preprocessor constant W is the harmonic potential constant omega
 
+RESULTS:
+1) 80 length units along x and y direction --> g.s. has enough room along these directions
+
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) 
+2) why are there jumps on the g.s.?
 
 */
 
@@ -19,13 +22,13 @@ TODO:
 
 #define PI M_PI
 #define TIME 0.00000250
-#define XLENGTH 50.0 //4.0
-#define YLENGTH 50.0 //0.1
+#define XLENGTH 90.0 
+#define YLENGTH 90.0 
 #define ZLENGTH 105.0
-#define TIME_POINTS 5 //number of time points
-#define SPX 100 //600
-#define SPY 100 //20
-#define SPZ 600
+#define TIME_POINTS 4 //number of time points
+#define SPX 50 //600
+#define SPY 50 //20
+#define SPZ 300
 #define NOISE_VOLUME 0.0
 
 #define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
@@ -36,16 +39,16 @@ TODO:
 		30. * array[x][mod(y , SPY)][z][pee] + 16. * array[x][mod(y - 1, SPY)][z][pee] +  -1 * array[x][mod(y - 2, SPY)][z][pee]) / (12. * pow(HY, 2)) )
 ;
 
-#define Dzz(array, x, y ,z , pee) ( (-1. * array[x][y][mod(z + 2, SPY)][pee] + 16.* array[x][y][mod(z + 1, SPY)][pee] - \
-		30. * array[x][y][mod(z , SPY)][pee] + 16. * array[x][y][mod(z - 1, SPY)][pee] +  -1 * array[x][y][mod(z - 2, SPY)][pee]) / (12. * pow(HZ, 2)) )
+#define Dzz(array, x, y ,z , pee) ( (-1. * array[x][y][mod(z + 2, SPZ)][pee] + 16.* array[x][y][mod(z + 1, SPZ)][pee] - \
+		30. * array[x][y][mod(z , SPZ)][pee] + 16. * array[x][y][mod(z - 1, SPZ)][pee] +  -1 * array[x][y][mod(z - 2, SPZ)][pee]) / (12. * pow(HZ, 2)) )
 ;
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
-const double WX = 7./476;
-const double WY = 7./476;
-const double WZ = 1.;
+const double WX = 1.;
+const double WY = 1.;
+const double WZ = 7./476;
 const double G = 1000.;
 const double OMEGA = 2.;
 const double EPS = 0.0;
@@ -366,7 +369,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .00001; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .000025; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][SPZ][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -425,13 +428,19 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 				for(int k = 0; k < SPZ; ++k)
 					real_solution[i][j][k][1] = real_solution[i][j][k][0] + Delta_t * fgs(real_solution, i, j, k, 0);
 
+		for(int i = 0; i < spx; ++i)
+			for(int j = 0; j < spy; ++j)
+				for(int k = 0; k < SPZ; ++k)
+					real_solution[i][j][k][2] = real_solution[i][j][k][1] + Delta_t * fgs(real_solution, i, j, k, 1);
+
 		// Move solution back an index so we can repeat the process
 		for (int i = 0; i < SPX; ++i)
 			for (int j = 0; j < SPY; ++j)
 				for(int k = 0; k < SPZ; ++k)
 				{
-					real_solution[i][j][k][0] = real_solution[i][j][k][1];
+					real_solution[i][j][k][0] = real_solution[i][j][k][2];
 					real_solution[i][j][k][1] = 0.0;
+					real_solution[i][j][k][2] = 0.0;
 				}
 
 
@@ -464,7 +473,10 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 100);
+	findGroundState(initialCondition, 400);
+
+	for(int i = 0; i < SPX; ++i)
+		printf("%e ", initialCondition[i][25][150][0]);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);

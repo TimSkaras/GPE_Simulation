@@ -1,5 +1,4 @@
-/*
-This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
+/*This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
 and then plots the solution using a surface plot command on gnuplot
 
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
@@ -451,7 +450,7 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 800);
+	findGroundState(initialCondition, 20000);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
