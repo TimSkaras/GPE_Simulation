@@ -22,9 +22,9 @@ TODO:
 
 #define PI M_PI
 #define TIME 0.00000250
-#define XLENGTH 90.0 
-#define YLENGTH 90.0 
-#define ZLENGTH 105.0
+#define XLENGTH 30.0 
+#define YLENGTH 30.0 
+#define ZLENGTH 110.0
 #define TIME_POINTS 4 //number of time points
 #define SPX 50 //600
 #define SPY 50 //20
@@ -53,6 +53,7 @@ const double G = 1000.;
 const double OMEGA = 2.;
 const double EPS = 0.0;
 const double WAVENUMBER_INPUT = 1.1;
+const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -139,19 +140,44 @@ void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_poin
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
 }
 
-double contraction(double solution[SPX][SPY][SPZ][4], int z_index ){
+double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
 	/*
-	This function will take a 3D matrix and contract across the y dimension at a given z- index (integer z_index) -- assumed to be on index 0 for 4th-axis
+	This function will take a 3D matrix and contract dimensions perpendicular to the contraction_axis
+
+	INPUTS:
+	solution -- 4D matrix holding the 3D solution at a single slice in time
+	contraction_axis -- integer indicating which axis should stay (e.g., if this var == 3, then the x and y dimensions will be integrated out)
 	*/
 
 	double integral_holder = 0.0;
 	// Integrate over the x and y-axis
 
-	for(int i = 0; i < SPX; ++i)
-		for (int j = 0; j < SPY; ++j)
-			integral_holder = integral_holder + solution[i][j][z_index][0];	
+	if (contraction_axis == 3){
 
-	return integral_holder * HY * HX;
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				integral_holder = integral_holder + solution[i][j][contraction_index][0];
+
+		integral_holder = integral_holder * HY * HX;	
+
+	}else if (contraction_axis == 2){
+
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPZ; ++j)
+				integral_holder = integral_holder + solution[i][contraction_index][j][0];
+
+		integral_holder = integral_holder * HX * HZ;	
+
+	}else if (contraction_axis == 1){
+		
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				integral_holder = integral_holder + solution[i][j][contraction_index][0];
+
+		integral_holder = integral_holder * HX * HY;
+	}
+
+	return integral_holder;
 }
 
 void loadMatrix(double matrix[SPX][SPY][4], char * filename){
@@ -176,7 +202,7 @@ double f(double imag_temp[SPX][SPY][SPZ][4], double real_temp[SPX][SPY][SPZ][4],
 	double imag_part = imag_temp[i][j][k][p];
 	double real_part = real_temp[i][j][k][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2) + pow((k * HZ - ZLENGTH / 2.0) * WZ, 2));
-	double new_G = G * (1. +  EPS * sin(OMEGA * t));
+	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 	return -.5 * (Dxx(imag_temp, i, j, k, p) + Dyy(imag_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) + V * imag_part + new_G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
 }
@@ -187,7 +213,7 @@ double g(double real_temp[SPX][SPY][SPZ][4], double imag_temp[SPX][SPY][SPZ][4],
 	double imag_part = imag_temp[i][j][k][p];
 	double real_part = real_temp[i][j][k][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2) + pow((k * HZ - ZLENGTH / 2.0) * WZ, 2));
-	double new_G = G * (1. +  EPS * sin(OMEGA * t));
+	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 
 	return .5 * (Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
@@ -278,7 +304,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 			}
 	
 	for(int i = 0; i < SPZ; ++i)
-		solution1D[i][0] = contraction(full_solution, i);
+		solution1D[i][0] = contraction(full_solution, 3, i);
 
 	double t;
 	// Real Time Propagation
@@ -342,7 +368,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 		// Contract full solution and save it to solution1D
 		for(int i = 0; i < SPZ; ++i)
-			solution1D[i][p] = contraction(full_solution, i);
+			solution1D[i][p] = contraction(full_solution, 3, i);
 
 		// Move new iteration in real/imag solution back an index to restart process
 		for(int i = 0; i < SPX; ++i)
@@ -369,7 +395,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .000025; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .001; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][SPZ][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -473,7 +499,7 @@ int main(){
 
 
 	// find the ground state
-	findGroundState(initialCondition, 400);
+	findGroundState(initialCondition, 50);
 
 	for(int i = 0; i < SPX; ++i)
 		printf("%e ", initialCondition[i][25][150][0]);

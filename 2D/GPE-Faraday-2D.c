@@ -6,7 +6,7 @@ The preprocessor constant W is the harmonic potential constant omega
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) 
+2) Find way to save ground state
 
 */
 
@@ -17,13 +17,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 200.00
+#define TIME 0.0002000
 #define XLENGTH 300.0 //4.0
 #define YLENGTH 10.0 //0.1
-#define TIME_POINTS 80000 //number of time points
-#define SPX 2000 //600
+#define TIME_POINTS 25 //number of time points
+#define SPX 600 //600
 #define SPY 40 //20
-#define NOISE_VOLUME 0.06
+#define NOISE_VOLUME 0.06 // 0.06
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -39,8 +39,10 @@ const double WX = 7./476;
 const double WY = 1.;
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.2;
+const double EPS = 0.0;
 const double WAVENUMBER_INPUT = 0.7;
+const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
+const int RED_COEFF = 1;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -140,16 +142,47 @@ double contraction(double solution[SPX][SPY][4], int i ){
 	return integral_holder * HY;
 }
 
+void saveMatrix(double matrix[SPX][SPY][4], char * filename){
+	/*
+	This function saves the numbers in matrix to single column in txt file "filename" -- the first line
+	of the output file gives the dimensions of the matrix "row, column"
+	*/
+
+	FILE * f = fopen(filename, "w");
+	fprintf(f, "%d %d\n\n", SPX, SPY);
+
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			fprintf(f, "%e\n", matrix[i][j][0]);
+
+	fclose(f);
+}
+
 void loadMatrix(double matrix[SPX][SPY][4], char * filename){
 	/*
 	Takes matrix data in filename and loads it into matrix
 	*/
 
 	FILE * f = fopen(filename, "r");
+	int rows, columns;
+	double buff; 
+
+	printf("test\n");
+
+	fscanf(f, "%d %d", &rows, &columns);
+
+	if (rows != SPX || columns != SPY){			
+		printf("File matrix does not match argument matrix in dimension\n");
+		fclose(f);
+		return;
+	}
+
 
 	for(int i = 0; i < SPX; ++i)
-		for(int j = 0; j < SPY; ++j)
-			matrix[i][j][0] = 0;
+		for(int j = 0; j < SPY; ++j){
+			fscanf(f, "%lf", &buff);
+			matrix[i][j][0] = buff;
+		}
 
 	fclose(f);
 }
@@ -162,7 +195,7 @@ double f(double imag_temp[SPX][SPY][4], double real_temp[SPX][SPY][4], int i, in
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-	double new_G = G * (1. +  EPS * sin(OMEGA * t));
+	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 	return -.5 * (Dxx(imag_temp, i, j, p) + Dyy(imag_temp, i, j, p)) + V * imag_part + new_G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
 }
@@ -173,8 +206,7 @@ double g(double real_temp[SPX][SPY][4], double imag_temp[SPX][SPY][4], int i, in
 	double imag_part = imag_temp[i][j][p];
 	double real_part = real_temp[i][j][p];
 	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2));
-	double new_G = G * (1. +  EPS * sin(OMEGA * t));
-
+	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 	return .5 * (Dxx(real_temp, i, j, p) + Dyy(real_temp, i, j, p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
 }
@@ -229,7 +261,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	double K[SPX][SPY][3];
 	double L[SPX][SPY][3];
 	double k_3, l_3;
-	int reduction_coeff = 20;
+	int reduction_coeff = RED_COEFF;
 
 	// printf("%d\n", arg_time_points/reduction_coeff);
 	
@@ -357,7 +389,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .0002; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .001; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -405,19 +437,23 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
 	normalize(real_solution);
 
-	for (int p = 1; p < iterations; ++p)
-	{
+	for (int p = 1; p < iterations; ++p){
 
 		for(int i = 0; i < spx; ++i)
 			for(int j = 0; j < spy; ++j)
 				real_solution[i][j][1] = real_solution[i][j][0] + Delta_t * fgs(real_solution, i, j, 0);
 
+		for(int i = 0; i < spx; ++i)
+			for(int j = 0; j < spy; ++j)
+				real_solution[i][j][2] = real_solution[i][j][1] + Delta_t * fgs(real_solution, i, j, 1);
+
 		// Move solution back an index so we can repeat the process
 		for (int i = 0; i < SPX; ++i)
 			for (int j = 0; j < SPY; ++j)
 			{
-				real_solution[i][j][0] = real_solution[i][j][1];
+				real_solution[i][j][0] = real_solution[i][j][2];
 				real_solution[i][j][1] = 0.0;
+				real_solution[i][j][2] = 0.0;
 			}
 
 
@@ -426,17 +462,7 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 	}
 
 	// Write the g.s. to a separate file
-	FILE * f = fopen("groundState.txt","w");
-
-	for(int i = 0; i < SPX; ++i)
-		for(int j = 0; j < SPY; ++j){
-
-			if (j < SPY - 1)
-				fprintf(f, "%e ", real_solution[i][j][0]);
-			else
-				fprintf(f, "%e\n", real_solution[i][j][0]);
-		}
-	fclose(f);
+	saveMatrix(real_solution, "groundState2D.txt");
 }
 
 int main(){
@@ -448,12 +474,13 @@ int main(){
 
 	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
-
+	loadMatrix(real_solution, "groundState2D.txt");
+	
 	// find the ground state
-	findGroundState(initialCondition, 20000);
+	// findGroundState(initialCondition, 2000);
 
 	// Run RTP
-	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+	// realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
 
 	return 0;
