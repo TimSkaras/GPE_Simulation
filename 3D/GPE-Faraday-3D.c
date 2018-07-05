@@ -170,9 +170,9 @@ double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int 
 
 	}else if (contraction_axis == 1){
 		
-		for(int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				integral_holder = integral_holder + solution[i][j][contraction_index][0];
+		for(int i = 0; i < SPY; ++i)
+			for (int j = 0; j < SPZ; ++j)
+				integral_holder = integral_holder + solution[contraction_index][i][j][0];
 
 		integral_holder = integral_holder * HX * HY;
 	}

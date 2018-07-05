@@ -18,6 +18,7 @@ struct plot_information
     char * output_file;
     double x_length;
     double y_length;
+    double length;
     double T;
 };
 
@@ -31,8 +32,8 @@ struct plot_information3D
     double T;
 };
 
-void plotFunction(char * commandsForGnuplot[], int num_commands, double xvals[], double yvals[], int num_points, char * output_file )
-{   /*
+void plotFunction(char * commandsForGnuplot[], int num_commands, double xvals[], double yvals[], int num_points, char * output_file ){   
+    /*
     
     This function takes a set of commands, data, and a filename and produces a 2D plot using gnuplot
     based on these data
@@ -204,10 +205,10 @@ void plotSurface2DReduced(char * commandsForGnuplot[], struct plot_information i
     */
 
     double Dt = info.T / arg_time_points;
-    double HX = info.x_length/space_points;
+    double H = info.length/space_points;
 
     double time_samples = 70.;
-    double space_samples = 400.;
+    double space_samples = 100.;
 
     int index_t = (int) ceil(arg_time_points/time_samples);
     int new_time_points = (int) floor(arg_time_points /  ceil(arg_time_points/time_samples));
@@ -248,7 +249,7 @@ void plotSurface2DReduced(char * commandsForGnuplot[], struct plot_information i
         for (int i=0; i < space_points; i++)
         {
             for (int j = 0; j < arg_time_points; ++j)
-                    fprintf(temp, "%e %e %.8e \n", HX * i, Dt * j , solution[i][j]); //Write the data to a temporary file
+                    fprintf(temp, "%e %e %.8e \n", H * i, Dt * j , solution[i][j]); //Write the data to a temporary file
 
             fprintf(temp, "\n");
         }
@@ -258,7 +259,7 @@ void plotSurface2DReduced(char * commandsForGnuplot[], struct plot_information i
         for (int i=0; i < new_spatial_points + 1; i++){
 
             for (int j = 0; j < new_time_points; ++j)
-                fprintf(temp, "%e %e %.8e \n", index_s * HX * i, index_t * Dt * j , reduced_solution[i][j]); //Write the data to a temporary file
+                fprintf(temp, "%e %e %.8e \n", index_s * H * i, index_t * Dt * j , reduced_solution[i][j]); //Write the data to a temporary file
 
             fprintf(temp, "\n");
         }

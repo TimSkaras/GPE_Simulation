@@ -6,7 +6,7 @@ The preprocessor constant W is the harmonic potential constant omega
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) Find way to save ground state
+2) Find way to save ground state -- done
 
 */
 
@@ -17,13 +17,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.0002000
+#define TIME 2.000
 #define XLENGTH 300.0 //4.0
-#define YLENGTH 10.0 //0.1
-#define TIME_POINTS 25 //number of time points
+#define YLENGTH 20.0 //0.1
+#define TIME_POINTS 800 //number of time points
 #define SPX 600 //600
 #define SPY 40 //20
-#define NOISE_VOLUME 0.06 // 0.06
+#define NOISE_VOLUME 0.00 // 0.06
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -39,7 +39,7 @@ const double WX = 7./476;
 const double WY = 1.;
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.0;
+const double EPS = 0.9;
 const double WAVENUMBER_INPUT = 0.7;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
 const int RED_COEFF = 1;
@@ -64,6 +64,7 @@ struct plot_settings{
 	
 	int plot3D;
 	char * title;
+	char * output_file;
 	int plot_normalization;
 };
 
@@ -77,23 +78,23 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotTimeDependence( int spx, int spy, int arg_time_points, double solution1D[SPX][arg_time_points], struct plot_settings plot){
+void plotTimeDependence( int sp, int arg_time_points, double solution1D[sp][arg_time_points], struct plot_settings plot){
 
 	// Set up commands for gnuplot
 	char plotCommand[100];
 	char title[100];
 	// sprintf(plotCommand, "plot [0:%d] [-2:2] 'sol.temp' ", TIME);
-	strcpy(plotCommand,"splot '1Dsol.temp' with lines");
+	sprintf(plotCommand,"splot '%s' with lines", plot.output_file);
 	sprintf(title, "set title \"");
 	strcat(title, plot.title);
 	strcat(title, "\"");
 	char * commands[15] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
 	int num_commands = 6;
-
+	
 	struct plot_information info = { .num_commands = num_commands, \
-		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .T = TIME};
+		.output_file = plot.output_file, .length = (sp == SPX) ? XLENGTH:YLENGTH , .T = TIME, .x_length = XLENGTH, .y_length = YLENGTH};
 
-	plotSurface2DReduced(commands, info , spx, arg_time_points, solution1D);
+	plotSurface2DReduced(commands, info , sp, arg_time_points, solution1D);
 }
 
 void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_points], double T){
@@ -128,18 +129,28 @@ void plotNormalization(int arg_time_points, double solution1D[SPX][arg_time_poin
 	plotFunction(commandsForGnuplot, num_commands, xvals, norm, arg_time_points, "norm.temp");
 }
 
-double contraction(double solution[SPX][SPY][4], int i ){
+double contraction(double solution[SPX][SPY][4], int contraction_axis, int i ){
 	/*
-	This function will take a 3D matrix and contract across the y dimension at a given x- index (integer i) -- assumed to be on index 0 for z-axis
+	This function will take a 3D matrix and contract across the axis perpendicular to contraction_axis
 	*/
 
-	double integral_holder = 0.0;
+	double integral = 0.0;
 	// Integrate over the y-axis
 
-	for (int j = 0; j < SPY; ++j)
-		integral_holder = integral_holder + solution[i][j][0];	
+	if( contraction_axis == 1){
+		for (int j = 0; j < SPY; ++j)
+			integral = integral + solution[i][j][0];
 
-	return integral_holder * HY;
+		integral = integral * HY;
+	}else if(contraction_axis == 2){
+
+		for (int j = 0; j < SPX; ++j)
+			integral = integral + solution[j][i][0];
+
+		integral = integral * HX;
+	}	
+
+	return integral;
 }
 
 void saveMatrix(double matrix[SPX][SPY][4], char * filename){
@@ -150,6 +161,7 @@ void saveMatrix(double matrix[SPX][SPY][4], char * filename){
 
 	FILE * f = fopen(filename, "w");
 	fprintf(f, "%d %d\n\n", SPX, SPY);
+	fprintf(f, "%f %f\n", XLENGTH, YLENGTH);
 
 	for(int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
@@ -165,7 +177,7 @@ void loadMatrix(double matrix[SPX][SPY][4], char * filename){
 
 	FILE * f = fopen(filename, "r");
 	int rows, columns;
-	double buff; 
+	double xlen, ylen, buff; 
 
 	printf("test\n");
 
@@ -177,6 +189,7 @@ void loadMatrix(double matrix[SPX][SPY][4], char * filename){
 		return;
 	}
 
+	fscanf(f, "%lf %lf", &xlen, &ylen);
 
 	for(int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j){
@@ -266,7 +279,9 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	// printf("%d\n", arg_time_points/reduction_coeff);
 	
 	double full_solution[SPX][SPY][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
-	double solution1D[SPX][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
+	double solutionXD[SPX][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension
+	double solutionYD[SPY][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'axial' dimension
+
 	
 	// Initialize arrays to clear junk out of arrays
 	for (int i = 0; i < spx; ++i){
@@ -295,12 +310,17 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 	
 	for(int i = 0; i < SPX; ++i)
-		solution1D[i][0] = contraction(full_solution, i);
+		solutionXD[i][0] = contraction(full_solution, 1, i);
+	
+	for(int i = 0; i < SPY; ++i)
+		solutionYD[i][0] = contraction(full_solution, 2, i);
 
+	
 	double t;
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
 	{
+		
 		// Load solution into first column of temp matrices
 		for(int i = 0; i < spx; ++i)
 			for(int j = 0; j < spy; ++j){
@@ -308,7 +328,7 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 				imag_temp[i][j][0] = imag_solution[i][j][0];
 		}
 
-
+		
 		t = Dt * (p - 1); //Forward Euler step
 		for (int i = 0; i < spx; ++i){
 			for (int j = 0; j < spy; ++j){
@@ -359,11 +379,14 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 				full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
 
 		// Contract full solution and save it to solution1D
-		if (mod(p, reduction_coeff) == 0)
+		if (mod(p, reduction_coeff) == 0){
 			for(int i = 0; i < SPX; ++i)
-				solution1D[i][p/reduction_coeff] = contraction(full_solution, i);
-	
+				solutionXD[i][p/reduction_coeff] = contraction(full_solution, 1, i);
 
+			for(int i = 0; i < SPY; ++i)
+				solutionYD[i][p/reduction_coeff] = contraction(full_solution, 2, i);
+		}
+	
 		// Move new iteration in real/imag solution back an index to restart process
 		for(int i = 0; i < SPX; ++i)
 			for (int j = 0; j < SPY; ++j)
@@ -371,25 +394,28 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 				real_solution[i][j][0] = real_solution[i][j][1];
 				imag_solution[i][j][0] = imag_solution[i][j][1];
 			}
-
-
+		
 	}
 
 	if (plot.plot3D == 1){
 
+		struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
+		struct plot_settings plotY = {.plot3D = 1, .title = "Real Time Solution Linear Y Density", .plot_normalization = 1, .output_file = "solYD.temp"};
+
 		// Now lets plot our results
-		plotTimeDependence( SPX, SPY, arg_time_points/reduction_coeff, solution1D, plot);
+		plotTimeDependence( SPX, arg_time_points/reduction_coeff, solutionXD, plotX);
+		plotTimeDependence(SPY, arg_time_points/reduction_coeff, solutionYD, plotY);
 
 	}
 	if (plot.plot_normalization == 1){
 
-		plotNormalization(arg_time_points/reduction_coeff, solution1D, T);
+		plotNormalization(arg_time_points/reduction_coeff, solutionXD, T);
 	}
 }
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .001; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .0001; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -472,16 +498,15 @@ int main(){
 	static double imag_solution[SPX][SPY][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][4];
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1, .output_file = "sol.temp"};
 
-	loadMatrix(real_solution, "groundState2D.txt");
-	
+	loadMatrix(initialCondition, "groundState2D.txt");
+
 	// find the ground state
-	// findGroundState(initialCondition, 2000);
+	// findGroundState(initialCondition, 20000);
 
 	// Run RTP
-	// realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
-
+	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
 	return 0;
 }
