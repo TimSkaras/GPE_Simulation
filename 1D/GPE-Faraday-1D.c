@@ -1,13 +1,11 @@
 /*
-This program numerically solves the non-linear schrodinger equation using a 4th order Runge Kutta Scheme
-and then plots the solution using a surface plot command on gnuplot
+This program has the capability to find the ground state for arbitrary Hamiltonian using the Imaginary 
+Time Propagation Method (ITP), advance that ground state in real time using RK4, and plot the resulting time evolution.
+The wave number of the perturbation is selected by the parameter K_P. The program will add noise 
+with a wave number having an integer number of wave lengths in the well.
 
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
 The preprocessor constant G is a parameter of the system proportional to the scattering length
-
-This program numerically solves homogeneous initial conditions with perturbations. The wave number of the 
-perturbation is selected by the parameter K_P. The program will add noise with a wave number having
-an integer number of wave lengths in the well.
 
 Note: We expect exponential growth whenever 0 < K_P < sqrt(4 * |G|) * A (where G < 0) and stability otherwise.
 I.e., the perturbations will always be stable if G is positive
@@ -24,28 +22,22 @@ TO DO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 3.0
-#define LENGTH 15.0
-#define TIME_POINTS 12000 	//Time step
-#define SPACE_POINTS 450 	//spatial step
+#define TIME 0.0030 // total time for real time propagation
+#define LENGTH 15.0 // distance in space over which soltuion spans
+#define TIME_POINTS 120 	//number of discretized points in time
+#define SPACE_POINTS 450 	//number of discretized points in space
 #define K_P 0.25 // Wave number of the perturbation
 
 
 // This is just a macro for finding the fourth ourder 
-#define Dxx(array, index, pee) ((-1. * array[mod((index) + 2, space_points)][(pee)] + 16.* array[mod((index) + 1, space_points)][(pee)] - \
-		30. * array[mod((index) , space_points)][(pee)] + 16. * array[mod((index) - 1, space_points)][(pee)] +  -1 * array[mod((index) - 2, space_points)][(pee)])/(12. * pow(H, 2)))
+#define Dxx(array, index, pee) ((-1. * array[mod((index) + 2, SPACE_POINTS)][(pee)] + 16.* array[mod((index) + 1, SPACE_POINTS)][(pee)] - \
+		30. * array[mod((index) , SPACE_POINTS)][(pee)] + 16. * array[mod((index) - 1, SPACE_POINTS)][(pee)] +  -1 * array[mod((index) - 2, SPACE_POINTS)][(pee)])/(12. * pow(H, 2)))
 ;
 const double H = LENGTH / (SPACE_POINTS);
 const double G = 250.; // Scattering Length parameter
 const double W = 1.5; //Trapping frequency
 const double OMEGA = 1.; //Perturbation frequency
 const double EPS = 0.0; //Perturbation amplitude
-
-// How many time steps do we want
-const int time_points = TIME_POINTS;
-
-// How many spatial points are there
-const int space_points = SPACE_POINTS;
 
 struct plot_settings{
 	/*
@@ -73,7 +65,7 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points, int arg_time_points, double solution[][arg_time_points], double T, char * output_file ){
+void plotSurface(char * commandsForGnuplot[], int num_commands, int arg_space_points, int arg_time_points, double solution[][arg_time_points], double T, char * output_file ){
 	/*
 	This function gives a 3-dimensional plot of data to 1+1D problem. Plots position versus time. Solution is specified using a 2-dimensional array where each row is a position 
 	in space and each column is a point in time. Converts the solution from a matrix specifying the z-value at each point and converts it into a file listing each point by 
@@ -83,7 +75,7 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points
     commandsForGnuplot -- array of strings, element of which is a valid gnuplot command
     num_commands -- an integer that gives the number of strings in the commandsForGnuplot array
    	solution -- 2-dimensional array matching the description provided above
-	space_points -- integer describing the number of points in space, which should equal the number of rows in solution
+	arg_space_points -- integer describing the number of points in space, which should equal the number of rows in solution
 	arg_time_points -- integer describing the number of points in time, which should equal the number of columns in solution
 	T -- double representing length of time simulated    
 	output_file -- filename with extension included that gives the name of the desired file 
@@ -103,8 +95,8 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points
 
     int index_t = (int) ceil(arg_time_points/time_samples);
 	int new_time_points = (int) floor(arg_time_points /  ceil(arg_time_points/time_samples));
-	int index_s = (int) ceil(space_points/space_samples);
-	int new_spatial_points = (int) floor(space_points /  ceil(space_points/space_samples));
+	int index_s = (int) ceil(arg_space_points/space_samples);
+	int new_spatial_points = (int) floor(arg_space_points /  ceil(arg_space_points/space_samples));
     double reduced_solution[new_spatial_points + 1][new_time_points];
     
 
@@ -112,7 +104,7 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points
     // There should always be more time points than space points
 
     // printf("index_t: %d \n T_new: %d \n", index_t, new_time_points);
-    if (space_points * arg_time_points > 1500)
+    if (arg_space_points * arg_time_points > 1500)
     {	
 		for (int i = 0; i < new_spatial_points; ++i){
 
@@ -135,9 +127,9 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points
     FILE * gnuplotPipe = popen("gnuplot -persistent", "w");
     
 
-    if (space_points * arg_time_points <= 1500)
+    if (arg_space_points * arg_time_points <= 1500)
     {
-	    for (int i=0; i < space_points; i++)
+	    for (int i=0; i < arg_space_points; i++)
 	    {
 	        for (int j = 0; j < arg_time_points; ++j)
 	            	fprintf(temp, "%e %e %.8e \n", H * i, Dt * j , solution[i][j]); //Write the data to a temporary file
@@ -162,7 +154,7 @@ void plotSurface(char * commandsForGnuplot[], int num_commands, int space_points
         fprintf(gnuplotPipe, "%s \n", commandsForGnuplot[i]); //Send commands to gnuplot one by one.
 }
 
-void plotNormalization(int space_points, int arg_time_points, double Array[SPACE_POINTS + 1][arg_time_points], double T){
+void plotNormalization(int arg_space_points, int arg_time_points, double Array[arg_space_points + 1][arg_time_points], double T){
 	/*
 	
 	This function plots the normalization of the numerical solution at each point in time using a midpoint integration algorithm
@@ -179,14 +171,14 @@ void plotNormalization(int space_points, int arg_time_points, double Array[SPACE
 
 	baseline = 0.;
 
-	for (int i = 0; i < space_points; ++i)
+	for (int i = 0; i < arg_space_points; ++i)
 		baseline = baseline +  H * (Array[i][0]);
 
 	for (int p = 0; p < arg_time_points; ++p)
 	{
 		integral = 0.;
 
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < arg_space_points; ++i)
 			integral = integral + (Array[i][p]);
 		
 		integral = H * integral;
@@ -208,8 +200,17 @@ void plotNormalization(int space_points, int arg_time_points, double Array[SPACE
 // -----------------Real Time Propagation Functions-----------------
 
 double f(double imag_temp[SPACE_POINTS][4], double real_temp[SPACE_POINTS][4], int i, int p, double t){
-	
-	// f gives the derivative for psi_real but for the K matrices because they need a function with a different argument
+	/*
+	f gives the derivative for psi_real at a specified point point in space and time
+
+	INPUT:
+	imag_temp -- matrix holding solution of imaginary component of psi
+	real_temp -- matrix holding solution of real component of psi
+	i -- integer giving index of the position in space at which the derivative should be found
+	p -- integer giving index of the moment in time at which the derivative should be given
+	t -- double specifying time for time dependent hamiltonians
+
+	*/
 	
 	double psi_i = imag_temp[i][p];
 	double psi_r = real_temp[i][p];
@@ -218,8 +219,17 @@ double f(double imag_temp[SPACE_POINTS][4], double real_temp[SPACE_POINTS][4], i
 }
 
 double g(double real_temp[SPACE_POINTS][4], double imag_temp[SPACE_POINTS][4], int i, int p, double t){
-	
-	// g gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
+	/*
+	g gives the derivative for psi_real at a specified point point in space and time
+
+	INPUT:
+	imag_temp -- matrix holding solution of imaginary component of psi
+	real_temp -- matrix holding solution of real component of psi
+	i -- integer giving index of the position in space at which the derivative should be found
+	p -- integer giving index of the moment in time at which the derivative should be given
+	t -- double specifying time for time dependent hamiltonians
+
+	*/
 	
 	double psi_i = imag_temp[i][p];
 	double psi_r = real_temp[i][p];
@@ -243,14 +253,14 @@ void addNoise(double Array[][4], double waveNumber){
 	double noise_volume = .00;
 
 	// Loop through array and add noise
-	for (int i = 0; i < space_points; ++i)
+	for (int i = 0; i < SPACE_POINTS; ++i)
 		Array[i][0] = Array[i][0] + noise_volume * sin(kp_eff * i * H);
 }
 
 void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_points, double real_solution[][arg_time_points], double imag_solution[][arg_time_points], struct plot_settings plot){
 	/*
 	*	This function takes uses the array initialCondition as an initial condition and propagates that profile forward 
-	*	in real time using RK4. The function outputs the solution matrix, which has dimensions specified by space_points
+	*	in real time using RK4. The function outputs the solution matrix, which has dimensions specified by SPACE_POINTS
 	*	constant and the arg_time_points argument parameter. This solver assumes periodic boundary conditions
 	*
 	*	INPUTS:
@@ -268,16 +278,16 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 
 	double Dt = T/arg_time_points;
 
-	double real_temp[space_points][4];
-	double imag_temp[space_points][4];
-	double K[space_points][3];
-	double L[space_points][3];
+	double real_temp[SPACE_POINTS][4];
+	double imag_temp[SPACE_POINTS][4];
+	double K[SPACE_POINTS][3];
+	double L[SPACE_POINTS][3];
 	double k_3, l_3;
 
-	double full_solution[space_points + 1][arg_time_points]; // This will have the psi square solution so we can plot the results
+	double full_solution[SPACE_POINTS + 1][arg_time_points]; // This will have the psi square solution so we can plot the results
 	
 	// Initialize arrays because apparently C needs you to do this
-	for (int i = 0; i < space_points; ++i){
+	for (int i = 0; i < SPACE_POINTS; ++i){
 
 		for (int j = 0; j < arg_time_points; ++j)
 		{
@@ -295,7 +305,7 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 	}
 
 	// Assign initial conditions
-	for (int i = 0; i < space_points; ++i)
+	for (int i = 0; i < SPACE_POINTS; ++i)
 		real_solution[i][0] = initialCondition[i];
 
 	double t;
@@ -303,13 +313,13 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 	for (int p = 1; p < arg_time_points; ++p){
 
 		// Load solution into first column of temp matrices
-		for(int i = 0; i < space_points; ++i){
+		for(int i = 0; i < SPACE_POINTS; ++i){
 			real_temp[i][0] = real_solution[i][p - 1];
 			imag_temp[i][0] = imag_solution[i][p - 1];
 		}
 
 		t = Dt * (p - 1); //Forward Euler step
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < SPACE_POINTS; ++i)
 		{
 			K[i][0] = f(imag_temp, real_temp, i, 0, t);
 			L[i][0] = g(real_temp, imag_temp, i, 0, t);
@@ -318,7 +328,7 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 		}
 
 		t = t + .5 * Dt; //Add half a time step 
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < SPACE_POINTS; ++i)
 		{
 			K[i][1] = f(imag_temp, real_temp, i, 1, t);
 			L[i][1] = g(real_temp, imag_temp, i, 1, t);
@@ -327,7 +337,7 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 		}
 
 		// t does not change for this step
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < SPACE_POINTS; ++i)
 		{
 			K[i][2] = f(imag_temp, real_temp, i, 2, t);
 			L[i][2] = g(real_temp, imag_temp, i, 2, t);
@@ -336,7 +346,7 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 		}
 
 		t = Dt * p; //Add full step for Backward Euler step
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < SPACE_POINTS; ++i)
 		{
 			k_3 = f(imag_temp, real_temp, i, 3, t);
 			l_3 = g(real_temp, imag_temp, i, 3, t);
@@ -348,13 +358,13 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 
 	if (plot.plot3D == 1){
 		// Find the psi squared solution so we can plot the results
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < SPACE_POINTS; ++i)
 			for (int j = 0; j < arg_time_points; ++j)
 				full_solution[i][j] = pow(real_solution[i][j], 2) + pow(imag_solution[i][j], 2);
 
 
 		// Find the difference from g.s. for diagnostic purposes
-		for(int i = 0; i < space_points; ++i)
+		for(int i = 0; i < SPACE_POINTS; ++i)
 			for(int j = 0; j < arg_time_points; ++j)
 				full_solution[i][j] = full_solution[i][j] - initialCondition[i] * initialCondition[i];
 
@@ -378,11 +388,11 @@ void realTimeProp(double initialCondition[SPACE_POINTS], double T, int arg_time_
 		int num_commands = 6;
 
 
-		plotSurface(commandsForGnuplot, num_commands, space_points + 1, arg_time_points, full_solution, T,  "sol.temp");
+		plotSurface(commandsForGnuplot, num_commands, SPACE_POINTS + 1, arg_time_points, full_solution, T,  "sol.temp");
 	}
 	if (plot.plot_normalization == 1){
 
-		plotNormalization(space_points, arg_time_points, full_solution, T);
+		plotNormalization(SPACE_POINTS, arg_time_points, full_solution, T);
 	}
 }
 
@@ -421,14 +431,14 @@ double fgs(double Psi_real[][4], int i, int p){
 	return 0.5 * Dxx(Psi_real, i, p) - 0.5 * pow(W * (i * H - LENGTH/2.), 2) * Psi_real[i][p] - G * pow(Psi_real[i][p], 2) * Psi_real[i][p];
 }
 
-void findGroundState(double real_solution[][4], int space_points, int iterations) {
+void findGroundState(double real_solution[][4], int arg_space_points, int iterations) {
 
 	// Declare initial variables
-	double real_temp[space_points][4];
-	double ground_state[space_points];
+	double real_temp[arg_space_points][4];
+	double ground_state[arg_space_points];
 
 	// Assign initial gaussian profile
-	for (int i = 0; i < space_points; ++i)
+	for (int i = 0; i < arg_space_points; ++i)
 		real_solution[i][0] = initialGuess(i * H);
 
 	normalize(real_solution);
@@ -436,11 +446,11 @@ void findGroundState(double real_solution[][4], int space_points, int iterations
 	for (int p = 1; p < iterations; ++p)
 	{
 
-		for(int i = 0; i < space_points; ++i)
+		for(int i = 0; i < arg_space_points; ++i)
 			real_solution[i][1] = real_solution[i][0] + Delta_t * fgs(real_solution, i, 0);
 
 		// Move solution back an index so we can repeat the process
-		for (int i = 0; i < space_points; ++i)
+		for (int i = 0; i < arg_space_points; ++i)
 		{
 			real_solution[i][0] = real_solution[i][1];
 			real_solution[i][1] = 0.0;
@@ -453,7 +463,7 @@ void findGroundState(double real_solution[][4], int space_points, int iterations
 	normalize(real_solution);
 }
 
-void stepTwo(double real_solution[][4], int space_points){
+void stepTwo(double real_solution[][4], int arg_space_points){
 	/*
 	*	This function takes an output from findGroundstate that is sufficiently close to the actual ground state and runs
 	*	this output through real time propagation and averages the solution over real time to remove any further error from g.s.
@@ -467,12 +477,12 @@ void stepTwo(double real_solution[][4], int space_points){
 	int trials = 20;
 	double T = 3.0;
 
-	double initialCondition[space_points];
+	double initialCondition[arg_space_points];
 
-	double real_sample[space_points][iterative_period];
-	double imag_sample[space_points][iterative_period];
+	double real_sample[arg_space_points][iterative_period];
+	double imag_sample[arg_space_points][iterative_period];
 
-	for(int i = 0; i < space_points; ++i)
+	for(int i = 0; i < arg_space_points; ++i)
 		initialCondition[i] = real_solution[i][0];
 
 	struct plot_settings trialPlot = {.plot3D = 0, .title = "Step Two Iterative Period", .plot_normalization = 0};
@@ -482,17 +492,17 @@ void stepTwo(double real_solution[][4], int space_points){
 	{
 		realTimeProp(initialCondition, T, iterative_period, real_sample, imag_sample, trialPlot);
 
-		for (int i = 0; i < space_points; ++i)	
+		for (int i = 0; i < arg_space_points; ++i)	
 			for (int j = 1; j < iterative_period; ++j)
 				initialCondition[i] = initialCondition[i] + sqrt(pow(real_sample[i][j], 2) + pow(imag_sample[i][j], 2));
 
-		for(int i = 0; i < space_points; ++i)
+		for(int i = 0; i < arg_space_points; ++i)
 			initialCondition[i] = initialCondition[i]/iterative_period;
 			
 	}
 
 
-	for(int i = 0; i < space_points; ++i)
+	for(int i = 0; i < arg_space_points; ++i)
 		real_solution[i][0] = initialCondition[i];
 
 	normalize(real_solution);
@@ -510,27 +520,27 @@ int main() {
 	double ground_state[SPACE_POINTS][4];
 	double initial_condition[SPACE_POINTS];
 
-	findGroundState(ground_state, space_points, 4000);
+	findGroundState(ground_state, SPACE_POINTS, 400);
 
-	stepTwo(ground_state, space_points);
+	stepTwo(ground_state, SPACE_POINTS);
 
-	for(int i = 0; i < space_points; ++i)
+	for(int i = 0; i < SPACE_POINTS; ++i)
 		initial_condition[i] = ground_state[i][0];
 
 	struct plot_settings plot_solution = {.plot3D = 1, .title = "Difference Between Real Time Solution and ITP G.S.", .plot_normalization = 1};
 
-	// realTimeProp(initial_condition, TIME, time_points, real_solution, imag_solution, plot_solution);
+	// realTimeProp(initial_condition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
 	double psi_r, psi_i;
-	for(int i = 0; i < space_points; ++i){
-		psi_r = real_solution[i][time_points - 1];
-		psi_i = imag_solution[i][time_points - 1];
+	for(int i = 0; i < SPACE_POINTS; ++i){
+		psi_r = real_solution[i][TIME_POINTS - 1];
+		psi_i = imag_solution[i][TIME_POINTS - 1];
 		ground_state[i][0] = sqrt(psi_r * psi_r + psi_i * psi_i);
 	}
 		
-	// stepTwo(ground_state, space_points);
+	// stepTwo(ground_state, SPACE_POINTS);
 
-	printf("%d %d \nSpace Step: %.5e \nTime Step: %.5e \nRatio: %f", space_points, time_points, H, Dt,  H * H / Dt);
+	printf("%d %d \nSpace Step: %.5e \nTime Step: %.5e \nRatio: %f", SPACE_POINTS, TIME_POINTS, H, Dt,  H * H / Dt);
 	
 	return 0;
 }

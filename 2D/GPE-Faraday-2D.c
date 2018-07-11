@@ -1,12 +1,26 @@
-/*This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
-and then plots the solution using a surface plot command on gnuplot
+/*
+
+This program has the capability to find the ground state for arbitrary Hamiltonian using the Imaginary 
+Time Propagation Method (ITP), advance that ground state in real time using RK4, and plot the resulting time evolution.
+The wave number of the perturbation is selected by the parameter K_P. The program will add noise 
+with a wave number having an integer number of wave lengths in the well.
 
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
-The preprocessor constant W is the harmonic potential constant omega
+The preprocessor constant G is a parameter of the system proportional to the scattering length
+
+Important Results:
+1) spx = 600, spy = 40, EPS = 0.2, noise = on -- the wave function becomes very noisy after 100 s or so
+2) spx = 600, spy = 40, EPS = 0, noise = on -- the wave function stays coherent but noise waves travel to outside over time
+3) spx = 900, spy = 45 (Ylength = 15), EPS = .01, noise on -- small oscillations visible in y density, noise dissipates, no instability observed
+4) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.7 -> 0.5) -- noise dissipates, small oscillation in y-density
+5) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (k = 0.5) -- noise dissipates, medium oscillation in y-denisty, new wavelength starts to emerge at end of simulation with k = 0.6444
+6) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- wave noise grows a good deal, nothing of note in y-density, not too unstable
+7) spx = 1050 (300 --> 350), spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- 
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
 2) Find way to save ground state -- done
+3) Include fft and associated analysis
 
 */
 
@@ -17,13 +31,13 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 2.000
-#define XLENGTH 300.0 //4.0
-#define YLENGTH 20.0 //0.1
-#define TIME_POINTS 800 //number of time points
-#define SPX 600 //600
-#define SPY 40 //20
-#define NOISE_VOLUME 0.00 // 0.06
+#define TIME 200.000
+#define XLENGTH 350.0 //4.0
+#define YLENGTH 15.0 //0.1
+#define TIME_POINTS 130000 //number of time points
+#define SPX 1050 //600
+#define SPY 45 //20
+#define NOISE_VOLUME 0.06 // 0.06
 
 #define Dxx(array, x, y, pee) ( (-1. * array[mod(x + 2, SPX)][y][pee] + 16.* array[mod(x + 1, SPX)][y][pee] - \
 		30. * array[mod(x , SPX)][y][pee] + 16. * array[mod(x - 1, SPX)][y][pee] +  -1 * array[mod(x - 2, SPX)][y][pee]) / (12. * pow(HX, 2)) )
@@ -39,10 +53,10 @@ const double WX = 7./476;
 const double WY = 1.;
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.9;
-const double WAVENUMBER_INPUT = 0.7;
+const double EPS = 0.12;
+const double WAVENUMBER_INPUT = 0.65;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-const int RED_COEFF = 1;
+const int RED_COEFF = 500;
 
 // How many time steps do we want
 const int time_points = TIME_POINTS;
@@ -245,7 +259,7 @@ void addNoise(double initialCondition[SPX][SPY][4], double waveNumber){
 	// Loop through initial condition and add noise
 	for(int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
-			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX) * exp(- .006 * pow(i * HX - XLENGTH/2., 2) ));
+			initialCondition[i][j][0] = initialCondition[i][j][0] * (1 + noise_volume * sin(kp_eff * i * HX) * exp(- .001 * pow(i * HX - XLENGTH/2., 2) ));
 }
 
 void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_points, double real_solution[][SPY][4], double imag_solution[][SPY][4], struct plot_settings plot){
@@ -373,13 +387,14 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 			}
 		}
 
-		// Add new iteration to full solution
-		for(int i = 0; i < SPX; ++i)
-			for(int j = 0; j < SPY; ++j)
-				full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
 
 		// Contract full solution and save it to solution1D
 		if (mod(p, reduction_coeff) == 0){
+
+			// Add new iteration to full solution
+			for(int i = 0; i < SPX; ++i)
+				for(int j = 0; j < SPY; ++j)
+					full_solution[i][j][0] = pow(real_solution[i][j][1], 2) + pow(imag_solution[i][j][1], 2);
 			for(int i = 0; i < SPX; ++i)
 				solutionXD[i][p/reduction_coeff] = contraction(full_solution, 1, i);
 
@@ -503,7 +518,7 @@ int main(){
 	loadMatrix(initialCondition, "groundState2D.txt");
 
 	// find the ground state
-	// findGroundState(initialCondition, 20000);
+	// findGroundState(initialCondition, 30000);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);

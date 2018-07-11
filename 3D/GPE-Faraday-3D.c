@@ -10,7 +10,7 @@ RESULTS:
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) why are there jumps on the g.s.?
+2) Implement loadMatrix and saveMatrix
 
 */
 

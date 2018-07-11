@@ -207,8 +207,8 @@ void plotSurface2DReduced(char * commandsForGnuplot[], struct plot_information i
     double Dt = info.T / arg_time_points;
     double H = info.length/space_points;
 
-    double time_samples = 70.;
-    double space_samples = 100.;
+    double time_samples = 100.;
+    double space_samples = 200.;
 
     int index_t = (int) ceil(arg_time_points/time_samples);
     int new_time_points = (int) floor(arg_time_points /  ceil(arg_time_points/time_samples));
