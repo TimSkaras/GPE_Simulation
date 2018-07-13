@@ -29,6 +29,7 @@ struct plot_information3D
     double x_length;
     double y_length;
     double z_length;
+    double length;
     double T;
 };
 
@@ -73,7 +74,6 @@ void plotFunction(char * commandsForGnuplot[], int num_commands, double xvals[],
     {
     fprintf(gnuplotPipe, "%s \n", commandsForGnuplot[i]); //Send commands to gnuplot one by one.
     }
-
 }
 
 void plotHarmonicEnergy(char * method, double xvals[], double position[], double velocity[], int num_points){
@@ -295,7 +295,7 @@ void plotSurface3DReduced(char * commandsForGnuplot[], struct plot_information3D
     */
 
     double Dt = info.T / arg_time_points;
-    double HZ = info.z_length/space_points;
+    double H = info.length/space_points;
 
     double time_samples = 70.;
     double space_samples = 400.;
@@ -339,7 +339,7 @@ void plotSurface3DReduced(char * commandsForGnuplot[], struct plot_information3D
         for (int i=0; i < space_points; i++)
         {
             for (int j = 0; j < arg_time_points; ++j)
-                    fprintf(temp, "%e %e %.8e \n", HZ * i, Dt * j , solution[i][j]); //Write the data to a temporary file
+                    fprintf(temp, "%e %e %.8e \n", H * i, Dt * j , solution[i][j]); //Write the data to a temporary file
 
             fprintf(temp, "\n");
         }
@@ -349,7 +349,7 @@ void plotSurface3DReduced(char * commandsForGnuplot[], struct plot_information3D
         for (int i=0; i < new_spatial_points + 1; i++){
 
             for (int j = 0; j < new_time_points; ++j)
-                fprintf(temp, "%e %e %.8e \n", index_s * HZ * i, index_t * Dt * j , reduced_solution[i][j]); //Write the data to a temporary file
+                fprintf(temp, "%e %e %.8e \n", index_s * H * i, index_t * Dt * j , reduced_solution[i][j]); //Write the data to a temporary file
 
             fprintf(temp, "\n");
         }

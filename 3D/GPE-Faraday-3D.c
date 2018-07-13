@@ -10,7 +10,8 @@ RESULTS:
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) Implement loadMatrix and saveMatrix
+2) Implement loadMatrix and saveMatrix -- done
+3) Check ground state to see if you can reduce spatial dimensions
 
 */
 
@@ -22,13 +23,13 @@ TODO:
 
 #define PI M_PI
 #define TIME 0.00000250
-#define XLENGTH 30.0 
-#define YLENGTH 30.0 
-#define ZLENGTH 110.0
-#define TIME_POINTS 150 //number of time points
-#define SPX 50 //600
-#define SPY 50 //20
-#define SPZ 300
+#define XLENGTH 12.0
+#define YLENGTH 12.0 
+#define ZLENGTH 210.0
+#define TIME_POINTS 10 //number of time points
+#define SPX 32 //600
+#define SPY 32 //20
+#define SPZ 512
 #define NOISE_VOLUME 0.0
 
 /*// Full Fourth Order Spatial Derivative
@@ -68,9 +69,7 @@ const double OMEGA = 2.;
 const double EPS = 0.0;
 const double WAVENUMBER_INPUT = 1.1;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-
-// How many time steps do we want
-const int time_points = TIME_POINTS;
+const int RED_COEFF = 2;
 
 // How many spatial points are there
 const int spx = SPX;
@@ -90,6 +89,7 @@ struct plot_settings{
 	
 	int plot3D;
 	char * title;
+	char * output_file;
 	int plot_normalization;
 };
 
@@ -103,23 +103,23 @@ int mod(int a, int b){
     return r < 0 ? r + b : r;
 }
 
-void plotTimeDependence(double solution1D[SPZ][TIME_POINTS], int spz, struct plot_settings plot){
+void plotTimeDependence(int sp, int arg_time_points, double solution1D[sp][arg_time_points], struct plot_settings plot){
 
 	// Set up commands for gnuplot
 	char plotCommand[100];
 	char title[100];
 	// sprintf(plotCommand, "plot [0:%d] [-2:2] 'sol.temp' ", TIME);
-	strcpy(plotCommand,"splot '1Dsol.temp' with lines");
+	sprintf(plotCommand,"splot '%s' with lines", plot.output_file);
 	sprintf(title, "set title \"");
 	strcat(title, plot.title);
 	strcat(title, "\"");
 	char * commands[15] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
 	int num_commands = 6;
-
+	
 	struct plot_information3D info = { .num_commands = num_commands, \
-		.output_file = "1Dsol.temp", .x_length = XLENGTH, .y_length = YLENGTH, .z_length = ZLENGTH, .T = TIME};
+		.output_file = plot.output_file, .length = (sp == SPX) ? XLENGTH:ZLENGTH , .T = TIME, .x_length = XLENGTH, .y_length = YLENGTH, .z_length = ZLENGTH};
 
-	plotSurface3DReduced(commands, info , spz, TIME_POINTS, solution1D);
+	plotSurface3DReduced(commands, info , sp, arg_time_points, solution1D);
 }
 
 void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
@@ -151,7 +151,7 @@ void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_poin
 	
 	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
 	int num_commands = 4;
-	plotFunction(commandsForGnuplot, num_commands, xvals, norm, time_points, "norm.temp");
+	plotFunction(commandsForGnuplot, num_commands, xvals, norm, arg_time_points, "norm.temp");
 }
 
 double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
@@ -319,9 +319,11 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	double K[SPX][SPY][SPZ][3];
 	double L[SPX][SPY][SPZ][3];
 	double k_3, l_3;
+	int reduction_coeff = RED_COEFF;
 
 	double full_solution[SPX][SPY][SPZ][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
-	double solution1D[SPZ][arg_time_points]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
+	double solutionXD[SPX][arg_time_points/reduction_coeff];
+	double solutionZD[SPZ][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
 	
 	// Initialize arrays to clear junk out of arrays
 	for (int i = 0; i < spx; ++i){
@@ -353,7 +355,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 			}
 	
 	for(int i = 0; i < SPZ; ++i)
-		solution1D[i][0] = contraction(full_solution, 3, i);
+		solutionZD[i][0] = contraction(full_solution, 3, i);
+
+	for(int i = 0; i < SPX; ++i)
+		solutionXD[i][0] = contraction(full_solution, 1, i);
 
 	double t;
 	// Real Time Propagation
@@ -409,15 +414,20 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 					imag_solution[i][j][k][1] = imag_solution[i][j][k][0] + 1./6 * Dt * (L[i][j][k][0] + 2 * L[i][j][k][1] + 2 * L[i][j][k][2] + l_3);
 				}
 
-		// Add new iteration to full solution
-		for(int i = 0; i < SPX; ++i)
-			for(int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k)
-					full_solution[i][j][k][0] = pow(real_solution[i][j][k][1], 2) + pow(imag_solution[i][j][k][1], 2);
+		if((p % reduction_coeff) == 0){
+			// Add new iteration to full solution
+			for(int i = 0; i < SPX; ++i)
+				for(int j = 0; j < SPY; ++j)
+					for(int k = 0; k < SPZ; ++k)
+						full_solution[i][j][k][0] = pow(real_solution[i][j][k][1], 2) + pow(imag_solution[i][j][k][1], 2);
 
-		// Contract full solution and save it to solution1D
-		for(int i = 0; i < SPZ; ++i)
-			solution1D[i][p] = contraction(full_solution, 3, i);
+			// Contract full solution and save it to solution1D
+			for(int i = 0; i < SPZ; ++i)
+				solutionZD[i][p/reduction_coeff] = contraction(full_solution, 3, i);
+
+			for(int i = 0; i < SPX; ++i)
+				solutionXD[i][p/reduction_coeff] = contraction(full_solution, 1, i);
+		}
 
 		// Move new iteration in real/imag solution back an index to restart process
 		for(int i = 0; i < SPX; ++i)
@@ -433,12 +443,16 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 	if (plot.plot3D == 1){
 
+		struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
+		struct plot_settings plotZ = {.plot3D = 1, .title = "Real Time Solution Linear Z Density", .plot_normalization = 1, .output_file = "solZD.temp"};
+
 		// Now lets plot our results
-		plotTimeDependence(solution1D, SPZ, plot);
+		plotTimeDependence(SPX, arg_time_points/reduction_coeff, solutionXD, plotX);
+		plotTimeDependence(SPZ, arg_time_points/reduction_coeff, solutionZD, plotZ);
 	}
 	if (plot.plot_normalization == 1){
 
-		plotNormalization(arg_time_points, solution1D, T);
+		plotNormalization(arg_time_points/reduction_coeff, solutionZD, T);
 	}
 }
 
@@ -533,11 +547,11 @@ int main(){
 	static double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
-	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
 
 	// find the ground state
-	// findGroundState(initialCondition, 50);
+	// findGroundState(initialCondition, 5000);
 
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
@@ -547,6 +561,8 @@ int main(){
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+
+
 
 
 	return 0;
