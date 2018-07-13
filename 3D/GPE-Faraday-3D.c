@@ -30,7 +30,7 @@ TODO:
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
-#define NOISE_VOLUME 0.0
+#define NOISE_VOLUME 0.06
 
 /*// Full Fourth Order Spatial Derivative
 #define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
@@ -69,7 +69,7 @@ const double OMEGA = 2.;
 const double EPS = 0.0;
 const double WAVENUMBER_INPUT = 1.1;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-const int RED_COEFF = 2;
+const int RED_COEFF = 1;
 
 // How many spatial points are there
 const int spx = SPX;
@@ -192,6 +192,45 @@ double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int 
 	}
 
 	return integral_holder;
+}
+
+void saveSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points], char * filename){
+
+	FILE * f = fopen(filename, "w");
+	fprintf(f, "%d %d %d\n\n", SPX, SPY, SPZ);
+	fprintf(f, "%f %f %f\n", XLENGTH, YLENGTH, ZLENGTH);
+
+	for(int i = 0; i < sp; ++i)
+		for(int j = 0; j < arg_time_points; ++j)
+			fprintf(f, "%e\n", matrix[i][j]);
+
+	fclose(f);
+}
+
+void loadSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points], char * filename){
+
+	FILE * f = fopen(filename, "r");
+	int rows, columns, lines;
+	double xlen, ylen, zlen, buff; 
+
+	fscanf(f, "%d %d %d", &rows, &columns, &lines);
+
+	if (rows != SPX || columns != SPY || lines != SPZ){			
+		printf("File matrix does not match argument matrix in dimension\n");
+		fclose(f);
+		return;
+	}
+
+	fscanf(f, "%lf %lf %lf", &xlen, &ylen, &zlen);
+
+	for(int i = 0; i < sp; ++i)
+		for(int j = 0; j < arg_time_points; ++j){
+			fscanf(f, "%lf", &buff);
+			matrix[i][j] = buff;
+		}
+
+	fclose(f);
+
 }
 
 void saveMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
@@ -440,6 +479,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 
 	}
+
+	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "xsolution.txt");
+	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "zsolution.txt");
+
 
 	if (plot.plot3D == 1){
 
