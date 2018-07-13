@@ -25,12 +25,13 @@ TODO:
 #define XLENGTH 30.0 
 #define YLENGTH 30.0 
 #define ZLENGTH 110.0
-#define TIME_POINTS 4 //number of time points
+#define TIME_POINTS 150 //number of time points
 #define SPX 50 //600
 #define SPY 50 //20
 #define SPZ 300
 #define NOISE_VOLUME 0.0
 
+/*// Full Fourth Order Spatial Derivative
 #define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
 		30. * array[mod(x , SPX)][y][z][pee] + 16. * array[mod(x - 1, SPX)][y][z][pee] +  -1 * array[mod(x - 2, SPX)][y][z][pee]) / (12. * pow(HX, 2)) )
 ;
@@ -42,10 +43,23 @@ TODO:
 #define Dzz(array, x, y ,z , pee) ( (-1. * array[x][y][mod(z + 2, SPZ)][pee] + 16.* array[x][y][mod(z + 1, SPZ)][pee] - \
 		30. * array[x][y][mod(z , SPZ)][pee] + 16. * array[x][y][mod(z - 1, SPZ)][pee] +  -1 * array[x][y][mod(z - 2, SPZ)][pee]) / (12. * pow(HZ, 2)) )
 ;
+*/
+// Full Second Order Spatial Derivative 
+#define Dxx(array, x, y, z, pee) ( (array[mod(x + 1, SPX)][y][z][pee] - 2. * array[mod(x , SPX)][y][z][pee] + array[mod(x - 1, SPX)][y][z][pee]) * xdivisor)
+;
+
+#define Dyy(array, x, y, z, pee) ( (array[x][mod(y + 1, SPY)][z][pee] - 2. * array[x][mod(y , SPY)][z][pee] +  array[x][mod(y - 1, SPY)][z][pee]) * ydivisor)
+;
+
+#define Dzz(array, x, y ,z , pee) ( ( array[x][y][mod(z + 1, SPZ)][pee] - 2.* array[x][y][mod(z , SPZ)][pee] + array[x][y][mod(z - 1, SPZ)][pee] ) * zdivisor)
+;
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
+const double xdivisor = 1./ (2. * pow(XLENGTH / (SPX), 2));
+const double ydivisor = 1./ (2. * pow(YLENGTH / (SPY), 2));
+const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 const double WX = 1.;
 const double WY = 1.;
 const double WZ = 7./476;
@@ -180,16 +194,51 @@ double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int 
 	return integral_holder;
 }
 
-void loadMatrix(double matrix[SPX][SPY][4], char * filename){
+void saveMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
+	/*
+	This function saves the numbers in matrix to single column in txt file "filename" -- the first line
+	of the output file gives the dimensions of the matrix "row, column"
+	*/
+
+	FILE * f = fopen(filename, "w");
+	fprintf(f, "%d %d %d\n\n", SPX, SPY, SPZ);
+	fprintf(f, "%f %f %f\n", XLENGTH, YLENGTH, ZLENGTH);
+
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			for(int k = 0; k < SPZ; ++k)
+				fprintf(f, "%e\n", matrix[i][j][k][0]);
+
+	fclose(f);
+}
+
+void loadMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
 	/*
 	Takes matrix data in filename and loads it into matrix
 	*/
 
 	FILE * f = fopen(filename, "r");
+	int rows, columns, lines;
+	double xlen, ylen, zlen, buff; 
+
+	printf("test\n");
+
+	fscanf(f, "%d %d %d", &rows, &columns, &lines);
+
+	if (rows != SPX || columns != SPY || lines != SPZ){			
+		printf("File matrix does not match argument matrix in dimension\n");
+		fclose(f);
+		return;
+	}
+
+	fscanf(f, "%lf %lf %lf", &xlen, &ylen, &zlen);
 
 	for(int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
-			matrix[i][j][0] = 0;
+			for(int k = 0; k < SPZ; ++k){
+				fscanf(f, "%lf", &buff);
+				matrix[i][j][k][0] = buff;
+			}
 
 	fclose(f);
 }
@@ -474,18 +523,7 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 		normalize(real_solution);
 	}
 
-	// Write the g.s. to a separate file
-	FILE * f = fopen("groundState.txt","w");
-
-	for(int i = 0; i < SPX; ++i)
-		for(int j = 0; j < SPY; ++j){
-
-			if (j < SPY - 1)
-				fprintf(f, "%e ", real_solution[i][j][0]);
-			else
-				fprintf(f, "%e\n", real_solution[i][j][0]);
-		}
-	fclose(f);
+	saveMatrix(real_solution, "groundState3D.txt");
 }
 
 int main(){
@@ -495,14 +533,17 @@ int main(){
 	static double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
 
 
 	// find the ground state
-	findGroundState(initialCondition, 50);
+	// findGroundState(initialCondition, 50);
 
-	for(int i = 0; i < SPX; ++i)
-		printf("%e ", initialCondition[i][25][150][0]);
+	// Load the groundstate
+	loadMatrix(initialCondition, "groundState3D.txt");
+
+	// for(int i = 0; i < SPX; ++i)
+	// 	printf("%e ", initialCondition[i][25][150][0]);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
