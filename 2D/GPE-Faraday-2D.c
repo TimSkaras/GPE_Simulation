@@ -9,13 +9,13 @@ Important constants are defined as preprocessor constants (like the desired leng
 The preprocessor constant G is a parameter of the system proportional to the scattering length
 
 Important Results:
-1) spx = 600, spy = 40, EPS = 0.2, noise = on -- the wave function becomes very noisy after 100 s or so
-2) spx = 600, spy = 40, EPS = 0, noise = on -- the wave function stays coherent but noise waves travel to outside over time
-3) spx = 900, spy = 45 (Ylength = 15), EPS = .01, noise on -- small oscillations visible in y density, noise dissipates, no instability observed
-4) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.7 -> 0.5) -- noise dissipates, small oscillation in y-density
-5) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (k = 0.5) -- noise dissipates, medium oscillation in y-denisty, new wavelength starts to emerge at end of simulation with k = 0.6444
-6) spx = 900, spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- wave noise grows a good deal, nothing of note in y-density, not too unstable
-7) spx = 1050 (300 --> 350), spy = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- 
+1) spx = 600, SPY = 40, EPS = 0.2, noise = on -- the wave function becomes very noisy after 100 s or so
+2) spx = 600, SPY = 40, EPS = 0, noise = on -- the wave function stays coherent but noise waves travel to outside over time
+3) spx = 900, SPY = 45 (Ylength = 15), EPS = .01, noise on -- small oscillations visible in y density, noise dissipates, no instability observed
+4) spx = 900, SPY = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.7 -> 0.5) -- noise dissipates, small oscillation in y-density
+5) spx = 900, SPY = 45 (Ylength = 15), EPS = .08, noise on (k = 0.5) -- noise dissipates, medium oscillation in y-denisty, new wavelength starts to emerge at end of simulation with k = 0.6444
+6) spx = 900, SPY = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- wave noise grows a good deal, nothing of note in y-density, not too unstable
+7) spx = 1050 (300 --> 350), SPY = 45 (Ylength = 15), EPS = .08, noise on (changed K: 0.5 -> 0.65) -- 
 
 TODO:
 1) Create stepTwo function for 2D -- postpone
@@ -31,10 +31,10 @@ TODO:
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 200.000
+#define TIME 0.00000200000
 #define XLENGTH 350.0 //4.0
 #define YLENGTH 15.0 //0.1
-#define TIME_POINTS 130000 //number of time points
+#define TIME_POINTS 10 //number of time points
 #define SPX 1050 //600
 #define SPY 45 //20
 #define NOISE_VOLUME 0.06 // 0.06
@@ -56,14 +56,7 @@ const double OMEGA = 2.;
 const double EPS = 0.12;
 const double WAVENUMBER_INPUT = 0.65;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-const int RED_COEFF = 500;
-
-// How many time steps do we want
-const int time_points = TIME_POINTS;
-
-// How many spatial points are there
-const int spx = SPX;
-const int spy = SPY;
+const int RED_COEFF = 1;
 
 struct plot_settings{
 	/*
@@ -296,23 +289,6 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	double solutionXD[SPX][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension
 	double solutionYD[SPY][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'axial' dimension
 
-	
-	// Initialize arrays to clear junk out of arrays
-	for (int i = 0; i < spx; ++i){
-		for (int j = 0; j < spy; ++j){
-			for (int p = 0; p < 3; ++p){
-				real_solution[i][j][p] = 0;
-				imag_solution[i][j][p] = 0;
-				full_solution[i][j][p] = 0.0;
-
-				real_temp[i][j][p] = 0;
-				imag_temp[i][j][p] = 0;
-				K[i][j][p] = 0;
-				L[i][j][p] = 0;
-			}
-		}
-	}
-
 	// Add the noise to the ground state
 	addNoise(initialCondition, WAVENUMBER_INPUT);
 
@@ -336,16 +312,16 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 	{
 		
 		// Load solution into first column of temp matrices
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j){
+		for(int i = 0; i < SPX; ++i)
+			for(int j = 0; j < SPY; ++j){
 				real_temp[i][j][0] = real_solution[i][j][0];
 				imag_temp[i][j][0] = imag_solution[i][j][0];
 		}
 
 		
 		t = Dt * (p - 1); //Forward Euler step
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
+		for (int i = 0; i < SPX; ++i){
+			for (int j = 0; j < SPY; ++j){
 
 				K[i][j][0] = f(imag_temp, real_temp, i, j, 0, t);
 				L[i][j][0] = g(real_temp, imag_temp, i, j, 0, t);
@@ -355,8 +331,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 
 		t = t + .5 * Dt; //Add half a time step 
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
+		for (int i = 0; i < SPX; ++i){
+			for (int j = 0; j < SPY; ++j){
 
 				K[i][j][1] = f(imag_temp, real_temp, i, j, 1, t);
 				L[i][j][1] = g(real_temp, imag_temp, i, j, 1, t);
@@ -366,8 +342,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 
 		// t does not change for this step
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
+		for (int i = 0; i < SPX; ++i){
+			for (int j = 0; j < SPY; ++j){
 
 				K[i][j][2] = f(imag_temp, real_temp, i, j, 2, t);
 				L[i][j][2] = g(real_temp, imag_temp, i, j, 2, t);
@@ -377,8 +353,8 @@ void realTimeProp(double initialCondition[SPX][SPY][4], double T, int arg_time_p
 		}
 
 		t = Dt * p; //Add full step for Backward Euler step
-		for (int i = 0; i < spx; ++i){
-			for (int j = 0; j < spy; ++j){
+		for (int i = 0; i < SPX; ++i){
+			for (int j = 0; j < SPY; ++j){
 
 				k_3 = f(imag_temp, real_temp, i, j, 3, t);
 				l_3 = g(real_temp, imag_temp, i, j, 3, t);
@@ -480,12 +456,12 @@ void findGroundState(double real_solution[SPX][SPY][4], int iterations) {
 
 	for (int p = 1; p < iterations; ++p){
 
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j)
+		for(int i = 0; i < SPX; ++i)
+			for(int j = 0; j < SPY; ++j)
 				real_solution[i][j][1] = real_solution[i][j][0] + Delta_t * fgs(real_solution, i, j, 0);
 
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j)
+		for(int i = 0; i < SPX; ++i)
+			for(int j = 0; j < SPY; ++j)
 				real_solution[i][j][2] = real_solution[i][j][1] + Delta_t * fgs(real_solution, i, j, 1);
 
 		// Move solution back an index so we can repeat the process

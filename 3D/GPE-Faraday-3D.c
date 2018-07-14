@@ -1,4 +1,7 @@
 /*
+This file has the same functionality as GPE-Faraday-3D.c but I have changed several operations, functions, or structural elements to try and make it faster.
+Code that has been optimized is often less maintainable or less readable, hence the intention of keeping the original code and the optimized code separate.
+
 This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
 and then plots the solution using a surface plot command on gnuplot
 
@@ -12,6 +15,8 @@ TODO:
 1) Create stepTwo function for 2D -- postpone
 2) Implement loadMatrix and saveMatrix -- done
 3) Check ground state to see if you can reduce spatial dimensions
+4) Intead of moving code backwards in array, just set index access to modulus
+
 
 */
 
@@ -19,32 +24,40 @@ TODO:
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 #include "..\Plot.h"
 
 #define PI M_PI
 #define TIME 0.00000250
-#define XLENGTH 12.0
+#define XLENGTH 12.0 
 #define YLENGTH 12.0 
 #define ZLENGTH 210.0
 #define TIME_POINTS 10 //number of time points
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
-#define NOISE_VOLUME 0.06
+#define NOISE_VOLUME 0.0
 
-/*// Full Fourth Order Spatial Derivative
+const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
+const double ydivisor = 1./ (12. * pow(YLENGTH / (SPY), 2));
+const double zdivisor = 1./ (12. * pow(ZLENGTH / (SPZ), 2));
+// Full Fourth Order Spatial Derivative
 #define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
-		30. * array[mod(x , SPX)][y][z][pee] + 16. * array[mod(x - 1, SPX)][y][z][pee] +  -1 * array[mod(x - 2, SPX)][y][z][pee]) / (12. * pow(HX, 2)) )
+		30. * array[mod(x , SPX)][y][z][pee] + 16. * array[mod(x - 1, SPX)][y][z][pee] +  -1 * array[mod(x - 2, SPX)][y][z][pee]) * xdivisor)
 ;
 
 #define Dyy(array, x, y, z, pee) ( (-1. * array[x][mod(y + 2, SPY)][z][pee] + 16.* array[x][mod(y + 1, SPY)][z][pee] - \
-		30. * array[x][mod(y , SPY)][z][pee] + 16. * array[x][mod(y - 1, SPY)][z][pee] +  -1 * array[x][mod(y - 2, SPY)][z][pee]) / (12. * pow(HY, 2)) )
+		30. * array[x][mod(y , SPY)][z][pee] + 16. * array[x][mod(y - 1, SPY)][z][pee] +  -1 * array[x][mod(y - 2, SPY)][z][pee]) * ydivisor )
 ;
 
 #define Dzz(array, x, y ,z , pee) ( (-1. * array[x][y][mod(z + 2, SPZ)][pee] + 16.* array[x][y][mod(z + 1, SPZ)][pee] - \
-		30. * array[x][y][mod(z , SPZ)][pee] + 16. * array[x][y][mod(z - 1, SPZ)][pee] +  -1 * array[x][y][mod(z - 2, SPZ)][pee]) / (12. * pow(HZ, 2)) )
+		30. * array[x][y][mod(z , SPZ)][pee] + 16. * array[x][y][mod(z - 1, SPZ)][pee] +  -1 * array[x][y][mod(z - 2, SPZ)][pee]) * zdivisor )
 ;
-*/
+
+
+/*const double xdivisor = 1./ (2. * pow(XLENGTH / (SPX), 2));
+const double ydivisor = 1./ (2. * pow(YLENGTH / (SPY), 2));
+const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 // Full Second Order Spatial Derivative 
 #define Dxx(array, x, y, z, pee) ( (array[mod(x + 1, SPX)][y][z][pee] - 2. * array[mod(x , SPX)][y][z][pee] + array[mod(x - 1, SPX)][y][z][pee]) * xdivisor)
 ;
@@ -53,14 +66,11 @@ TODO:
 ;
 
 #define Dzz(array, x, y ,z , pee) ( ( array[x][y][mod(z + 1, SPZ)][pee] - 2.* array[x][y][mod(z , SPZ)][pee] + array[x][y][mod(z - 1, SPZ)][pee] ) * zdivisor)
-;
+;*/
 
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
-const double xdivisor = 1./ (2. * pow(XLENGTH / (SPX), 2));
-const double ydivisor = 1./ (2. * pow(YLENGTH / (SPY), 2));
-const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 const double WX = 1.;
 const double WY = 1.;
 const double WZ = 7./476;
@@ -70,11 +80,6 @@ const double EPS = 0.0;
 const double WAVENUMBER_INPUT = 1.1;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
 const int RED_COEFF = 1;
-
-// How many spatial points are there
-const int spx = SPX;
-const int spy = SPY;
-const int spz = SPZ;
 
 struct plot_settings{
 	/*
@@ -122,6 +127,80 @@ void plotTimeDependence(int sp, int arg_time_points, double solution1D[sp][arg_t
 	plotSurface3DReduced(commands, info , sp, arg_time_points, solution1D);
 }
 
+double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
+	/*
+	This function will take a 3D matrix and contract dimensions perpendicular to the contraction_axis
+
+	INPUTS:
+	solution -- 4D matrix holding the 3D solution at a single slice in time
+	contraction_axis -- integer indicating which axis should stay (e.g., if this var == 3, then the x and y dimensions will be integrated out)
+	*/
+
+	double integral_holder = 0.0;
+	// Integrate over the x and y-axis
+
+	if (contraction_axis == 3){
+
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				integral_holder += solution[i][j][contraction_index][0];
+
+		integral_holder *= HX * HY;	
+
+	}else if (contraction_axis == 2){
+
+		for(int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPZ; ++j)
+				integral_holder += solution[i][contraction_index][j][0];
+
+		integral_holder *= HX * HY;	
+
+	}else if (contraction_axis == 1){
+		
+		for(int i = 0; i < SPY; ++i)
+			for (int j = 0; j < SPZ; ++j)
+				integral_holder += solution[contraction_index][i][j][0];
+
+		integral_holder *= HX * HY;
+	}
+
+	return integral_holder;
+}
+
+void plotZDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
+    // Plots the number density for the initial condition/g.s. along the z axis
+
+    double zvals[SPZ];
+    double zdensity[SPZ];
+
+    for (int i = 0; i < SPZ; ++i)
+    {
+        zvals[i] = HZ * i;
+        zdensity[i] = contraction(initialCondition, 3, i);
+    }
+
+    char * zcommandsForGnuplot[] =  {"set title \"Z-density\"", "set xlabel \"z-axis\"", "plot 'zdensity.temp' with lines"};
+    int num_commands = 3;
+    plotFunction(zcommandsForGnuplot, num_commands, zvals, zdensity, SPZ, "zdensity.temp");
+}
+
+void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
+    // Plots the number density for the initial condition/g.s. along the z axis
+
+    double xvals[SPX];
+    double xdensity[SPX];
+
+    for (int i = 0; i < SPX; ++i)
+    {
+        xvals[i] = HX * i;
+        xdensity[i] = contraction(initialCondition, 1, i);
+    }
+
+    char * xcommandsForGnuplot[] =  {"set title \"X-density\"", "set xlabel \"x-axis\"", "plot 'xdensity.temp' with lines"};
+    int num_commands = 3;
+    plotFunction(xcommandsForGnuplot, num_commands, xvals, xdensity, SPX, "xdensity.temp");
+}
+
 void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
 	/*
 	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
@@ -151,47 +230,7 @@ void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_poin
 	
 	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
 	int num_commands = 4;
-	plotFunction(commandsForGnuplot, num_commands, xvals, norm, arg_time_points, "norm.temp");
-}
-
-double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
-	/*
-	This function will take a 3D matrix and contract dimensions perpendicular to the contraction_axis
-
-	INPUTS:
-	solution -- 4D matrix holding the 3D solution at a single slice in time
-	contraction_axis -- integer indicating which axis should stay (e.g., if this var == 3, then the x and y dimensions will be integrated out)
-	*/
-
-	double integral_holder = 0.0;
-	// Integrate over the x and y-axis
-
-	if (contraction_axis == 3){
-
-		for(int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				integral_holder = integral_holder + solution[i][j][contraction_index][0];
-
-		integral_holder = integral_holder * HY * HX;	
-
-	}else if (contraction_axis == 2){
-
-		for(int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPZ; ++j)
-				integral_holder = integral_holder + solution[i][contraction_index][j][0];
-
-		integral_holder = integral_holder * HX * HZ;	
-
-	}else if (contraction_axis == 1){
-		
-		for(int i = 0; i < SPY; ++i)
-			for (int j = 0; j < SPZ; ++j)
-				integral_holder = integral_holder + solution[contraction_index][i][j][0];
-
-		integral_holder = integral_holder * HX * HY;
-	}
-
-	return integral_holder;
+	plotFunction(commandsForGnuplot, num_commands, xvals, norm, TIME_POINTS, "norm.temp");
 }
 
 void saveSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points], char * filename){
@@ -230,7 +269,6 @@ void loadSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points
 		}
 
 	fclose(f);
-
 }
 
 void saveMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
@@ -289,7 +327,7 @@ double f(double imag_temp[SPX][SPY][SPZ][4], double real_temp[SPX][SPY][SPZ][4],
 	
 	double imag_part = imag_temp[i][j][k][p];
 	double real_part = real_temp[i][j][k][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2) + pow((k * HZ - ZLENGTH / 2.0) * WZ, 2));
+	double V = .5 *  (pow((i * HX - XLENGTH * 0.5) * WX, 2) + pow((j * HY - YLENGTH * 0.5) * WY, 2) + pow((k * HZ - ZLENGTH * 0.5) * WZ, 2));
 	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 	return -.5 * (Dxx(imag_temp, i, j, k, p) + Dyy(imag_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) + V * imag_part + new_G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
@@ -300,7 +338,7 @@ double g(double real_temp[SPX][SPY][SPZ][4], double imag_temp[SPX][SPY][SPZ][4],
 	
 	double imag_part = imag_temp[i][j][k][p];
 	double real_part = real_temp[i][j][k][p];
-	double V = .5 *  (pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH / 2.0) * WY, 2) + pow((k * HZ - ZLENGTH / 2.0) * WZ, 2));
+	double V = .5 *  (pow((i * HX - XLENGTH * 0.5) * WX, 2) + pow((j * HY - YLENGTH * 0.5) * WY, 2) + pow((k * HZ - ZLENGTH * 0.5) * WZ, 2));
 	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 
@@ -363,24 +401,6 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	double full_solution[SPX][SPY][SPZ][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
 	double solutionXD[SPX][arg_time_points/reduction_coeff];
 	double solutionZD[SPZ][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
-	
-	// Initialize arrays to clear junk out of arrays
-	for (int i = 0; i < spx; ++i){
-		for (int j = 0; j < spy; ++j){
-			for (int k = 0; k < spz; ++k){
-				for (int p = 0; p < 3; ++p){
-					real_solution[i][j][k][p] = 0;
-					imag_solution[i][j][k][p] = 0;
-					full_solution[i][j][k][p] = 0.0;
-
-					real_temp[i][j][k][p] = 0;
-					imag_temp[i][j][k][p] = 0;
-					K[i][j][k][p] = 0;
-					L[i][j][k][p] = 0;
-				}
-			}
-		}
-	}
 
 	// Add the noise to the ground state
 	addNoise(initialCondition, WAVENUMBER_INPUT);
@@ -399,23 +419,24 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	for(int i = 0; i < SPX; ++i)
 		solutionXD[i][0] = contraction(full_solution, 1, i);
 
+
 	double t;
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
 	{
 		// Load solution into first column of temp matrices
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j)
-				for(int k = 0; k < spz; ++k){
+		for(int i = 0; i < SPX; ++i)
+			for(int j = 0; j < SPY; ++j)
+				for(int k = 0; k < SPZ; ++k){
 					real_temp[i][j][k][0] = real_solution[i][j][k][0];
 					imag_temp[i][j][k][0] = imag_solution[i][j][k][0];
 				}
 
 
 		t = Dt * (p - 1); //Forward Euler step
-		for (int i = 0; i < spx; ++i)
-			for (int j = 0; j < spy; ++j)
-				for (int k = 0; k < spz; ++k){
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				for (int k = 0; k < SPZ; ++k){
 					K[i][j][k][0] = f(imag_temp, real_temp, i, j, k, 0, t);
 					L[i][j][k][0] = g(real_temp, imag_temp, i, j, k, 0, t);
 					real_temp[i][j][k][1] = real_solution[i][j][k][0] + .5 * Dt * K[i][j][k][0]; 
@@ -423,9 +444,9 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				}
 
 		t = t + .5 * Dt; //Add half a time step 
-		for (int i = 0; i < spx; ++i)
-			for (int j = 0; j < spy; ++j)
-				for(int k = 0; k < spz; ++k){
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				for(int k = 0; k < SPZ; ++k){
 					K[i][j][k][1] = f(imag_temp, real_temp, i, j, k, 1, t);
 					L[i][j][k][1] = g(real_temp, imag_temp, i, j, k, 1, t);
 					real_temp[i][j][k][2] = real_solution[i][j][k][0] + .5 * Dt * K[i][j][k][1];
@@ -434,9 +455,9 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 
 		// t does not change for this step
-		for (int i = 0; i < spx; ++i)
-			for (int j = 0; j < spy; ++j)
-				for(int k = 0; k < spz; ++k){
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				for(int k = 0; k < SPZ; ++k){
 					K[i][j][k][2] = f(imag_temp, real_temp, i, j, k, 2, t);
 					L[i][j][k][2] = g(real_temp, imag_temp, i, j, k, 2, t);
 					real_temp[i][j][k][3] = real_solution[i][j][k][0] + Dt * K[i][j][k][2];
@@ -444,9 +465,9 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				}	
 
 		t = Dt * p; //Add full step for Backward Euler step
-		for (int i = 0; i < spx; ++i)
-			for (int j = 0; j < spy; ++j)
-				for(int k = 0; k < spz; ++k){
+		for (int i = 0; i < SPX; ++i)
+			for (int j = 0; j < SPY; ++j)
+				for(int k = 0; k < SPZ; ++k){
 					k_3 = f(imag_temp, real_temp, i, j, k, 3, t);
 					l_3 = g(real_temp, imag_temp, i, j, k, 3, t);
 					real_solution[i][j][k][1] = real_solution[i][j][k][0] + 1./6 * Dt * (K[i][j][k][0] + 2 * K[i][j][k][1] + 2 * K[i][j][k][2] + k_3);
@@ -483,7 +504,6 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "xsolution.txt");
 	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "zsolution.txt");
 
-
 	if (plot.plot3D == 1){
 
 		struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
@@ -501,7 +521,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 // -------------Imaginary Time Propagation Functions------------
 
-const double Delta_t = .001; // This is the time step just used by the imaginary time propagation method
+const double Delta_t = .01; // This is the time step just used by the imaginary time propagation method
 
 double PsiNorm(double Array[SPX][SPY][SPZ][4]){
 	// Integrates down the first x-y matrix assuming spatial square has area HX * HY
@@ -511,9 +531,9 @@ double PsiNorm(double Array[SPX][SPY][SPZ][4]){
 	for (int i = 0; i < SPX; ++i)
 		for (int j = 0; j < SPY; ++j)
 			for(int k = 0; k < SPZ; ++k)
-				integral = integral + pow(Array[i][j][k][0], 2);
+				integral += pow(Array[i][j][k][0], 2);
 
-	integral = HX * HY * HZ * integral;
+	integral *= HX * HY * HZ;
 
 	return integral;
 }
@@ -526,21 +546,30 @@ double initialGuess(double x, double y, double z){
 void normalize(double Array[SPX][SPY][SPZ][4]){
 	// Takes an array with a function in the first column and normalizes that function back to 1
 
-	double norm = sqrt( PsiNorm(Array) );
+	double norm = 1 / sqrt( PsiNorm(Array) );
 
 	for (int i = 0; i < SPX; ++i)
 		for (int j = 0; j < SPY; ++j)
 			for(int k = 0; k < SPZ; ++k)
-				Array[i][j][k][0] = Array[i][j][k][0] / norm;
+				Array[i][j][k][0] = Array[i][j][k][0] * norm;
 }
 
-double fgs(double Psi_real[SPX][SPY][SPZ][4], int i, int j, int k, int p){
-	// f is the function that gives the derivative for psi_real, which is why it is a function of imag_solution
+void advance(double real_solution[SPX][SPY][SPZ][4], int p ){
+	// Advance the solution matrix one index forward in time where p is the solution index of the currently solved time
 
-		double real_part = Psi_real[i][j][k][p];
-		double V = pow((i * HX - XLENGTH/2.0) * WX, 2) + pow((j * HY - YLENGTH/2.0) * WY, 2) + pow((k * HZ - ZLENGTH/2.0) * WZ, 2);
-	
-		return 1./2 * (Dxx(Psi_real, i, j, k, p) + Dyy(Psi_real, i, j, k, p) + Dzz(Psi_real, i, j, k, p))  - 1/2. * V * real_part - G * pow(real_part , 2) * real_part;
+	int next = (p + 1) % 4;
+	double real_part;
+	double V;
+	double lhs;
+
+	for(int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			for(int k = 0; k < SPZ; ++k){
+				real_part = real_solution[i][j][k][p];
+				V = pow((i * HX - XLENGTH / 2) * WX, 2) + pow((j * HY - YLENGTH / 2) * WY, 2) + pow((k * HZ - ZLENGTH / 2) * WZ, 2);
+				lhs = (Dxx(real_solution, i, j, k, p) + Dyy(real_solution, i, j, k, p) + Dzz(real_solution, i, j, k, p)) / 2  - V * real_part / 2 - G * pow(real_part , 3);
+				real_solution[i][j][k][next] = real_solution[i][j][k][p] + Delta_t * lhs;
+			}
 }
 
 void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
@@ -553,32 +582,24 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 
 	normalize(real_solution);
 
+	loadMatrix(real_solution, "groundState3D.txt");
+
+	clock_t start = clock();
+
 	for (int p = 1; p < iterations; ++p){
 
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j)
-				for(int k = 0; k < SPZ; ++k)
-					real_solution[i][j][k][1] = real_solution[i][j][k][0] + Delta_t * fgs(real_solution, i, j, k, 0);
-
-		for(int i = 0; i < spx; ++i)
-			for(int j = 0; j < spy; ++j)
-				for(int k = 0; k < SPZ; ++k)
-					real_solution[i][j][k][2] = real_solution[i][j][k][1] + Delta_t * fgs(real_solution, i, j, k, 1);
-
-		// Move solution back an index so we can repeat the process
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k)
-				{
-					real_solution[i][j][k][0] = real_solution[i][j][k][2];
-					real_solution[i][j][k][1] = 0.0;
-					real_solution[i][j][k][2] = 0.0;
-				}
-
-
+		advance(real_solution, (p - 1) % 4);
+				
 		// Now normalize the solution back to 1
-		normalize(real_solution);
+		if(p % 20 == 0)	
+			normalize(real_solution);
 	}
+
+	clock_t end = clock();
+
+	printf("%f\n", ((double) (end - start)) / CLOCKS_PER_SEC);
+
+	normalize(real_solution);
 
 	saveMatrix(real_solution, "groundState3D.txt");
 }
@@ -586,27 +607,23 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 int main(){
 
 	// Declare initial variables
-	static double real_solution[SPX][SPY][SPZ][4]; // This will be the solution matrix -- it will only hold the state of the system at one time slice
-	static double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
+	double real_solution[SPX][SPY][SPZ][4]; // This will be the solution matrix -- it will only hold the state of the system at one time slice
+	double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
 	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
-
-	// find the ground state
-	// findGroundState(initialCondition, 5000);
-
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
 
-	// for(int i = 0; i < SPX; ++i)
-	// 	printf("%e ", initialCondition[i][25][150][0]);
+	// find the ground state
+	// findGroundState(initialCondition, 4000);
 
 	// Run RTP
 	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
-
-
+	// plotZDensity3D(initialCondition);
+	// plotXDensity3D(initialCondition);
 
 	return 0;
 }
