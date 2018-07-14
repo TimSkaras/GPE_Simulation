@@ -419,28 +419,21 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	for(int i = 0; i < SPX; ++i)
 		solutionXD[i][0] = contraction(full_solution, 1, i);
 
+	clock_t start = clock();
 
 	double t;
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
 	{
-		// Load solution into first column of temp matrices
-		for(int i = 0; i < SPX; ++i)
-			for(int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k){
-					real_temp[i][j][k][0] = real_solution[i][j][k][0];
-					imag_temp[i][j][k][0] = imag_solution[i][j][k][0];
-				}
-
 
 		t = Dt * (p - 1); //Forward Euler step
 		for (int i = 0; i < SPX; ++i)
 			for (int j = 0; j < SPY; ++j)
 				for (int k = 0; k < SPZ; ++k){
-					K[i][j][k][0] = f(imag_temp, real_temp, i, j, k, 0, t);
-					L[i][j][k][0] = g(real_temp, imag_temp, i, j, k, 0, t);
-					real_temp[i][j][k][1] = real_solution[i][j][k][0] + .5 * Dt * K[i][j][k][0]; 
-					imag_temp[i][j][k][1] = imag_solution[i][j][k][0] + .5 * Dt * L[i][j][k][0];
+					K[i][j][k][0] = f(imag_solution, real_solution, i, j, k, (p - 1) % 4, t);
+					L[i][j][k][0] = g(real_solution, imag_solution, i, j, k, (p - 1) % 4, t);
+					real_temp[i][j][k][1] = real_solution[i][j][k][(p - 1) % 4] + .5 * Dt * K[i][j][k][0]; 
+					imag_temp[i][j][k][1] = imag_solution[i][j][k][(p - 1) % 4] + .5 * Dt * L[i][j][k][0];
 				}
 
 		t = t + .5 * Dt; //Add half a time step 
@@ -449,8 +442,8 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				for(int k = 0; k < SPZ; ++k){
 					K[i][j][k][1] = f(imag_temp, real_temp, i, j, k, 1, t);
 					L[i][j][k][1] = g(real_temp, imag_temp, i, j, k, 1, t);
-					real_temp[i][j][k][2] = real_solution[i][j][k][0] + .5 * Dt * K[i][j][k][1];
-					imag_temp[i][j][k][2] = imag_solution[i][j][k][0] + .5 * Dt * L[i][j][k][1];
+					real_temp[i][j][k][2] = real_solution[i][j][k][(p - 1) % 4] + .5 * Dt * K[i][j][k][1];
+					imag_temp[i][j][k][2] = imag_solution[i][j][k][(p - 1) % 4] + .5 * Dt * L[i][j][k][1];
 				}
 
 
@@ -460,8 +453,8 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				for(int k = 0; k < SPZ; ++k){
 					K[i][j][k][2] = f(imag_temp, real_temp, i, j, k, 2, t);
 					L[i][j][k][2] = g(real_temp, imag_temp, i, j, k, 2, t);
-					real_temp[i][j][k][3] = real_solution[i][j][k][0] + Dt * K[i][j][k][2];
-					imag_temp[i][j][k][3] = imag_solution[i][j][k][0] + Dt * L[i][j][k][2];
+					real_temp[i][j][k][3] = real_solution[i][j][k][(p - 1) % 4] + Dt * K[i][j][k][2];
+					imag_temp[i][j][k][3] = imag_solution[i][j][k][(p - 1) % 4] + Dt * L[i][j][k][2];
 				}	
 
 		t = Dt * p; //Add full step for Backward Euler step
@@ -470,8 +463,8 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				for(int k = 0; k < SPZ; ++k){
 					k_3 = f(imag_temp, real_temp, i, j, k, 3, t);
 					l_3 = g(real_temp, imag_temp, i, j, k, 3, t);
-					real_solution[i][j][k][1] = real_solution[i][j][k][0] + 1./6 * Dt * (K[i][j][k][0] + 2 * K[i][j][k][1] + 2 * K[i][j][k][2] + k_3);
-					imag_solution[i][j][k][1] = imag_solution[i][j][k][0] + 1./6 * Dt * (L[i][j][k][0] + 2 * L[i][j][k][1] + 2 * L[i][j][k][2] + l_3);
+					real_solution[i][j][k][p % 4] = real_solution[i][j][k][(p - 1) % 4] + 1./6 * Dt * (K[i][j][k][0] + 2 * K[i][j][k][1] + 2 * K[i][j][k][2] + k_3);
+					imag_solution[i][j][k][p % 4] = imag_solution[i][j][k][(p - 1) % 4] + 1./6 * Dt * (L[i][j][k][0] + 2 * L[i][j][k][1] + 2 * L[i][j][k][2] + l_3);
 				}
 
 		if((p % reduction_coeff) == 0){
@@ -479,7 +472,7 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 			for(int i = 0; i < SPX; ++i)
 				for(int j = 0; j < SPY; ++j)
 					for(int k = 0; k < SPZ; ++k)
-						full_solution[i][j][k][0] = pow(real_solution[i][j][k][1], 2) + pow(imag_solution[i][j][k][1], 2);
+						full_solution[i][j][k][0] = pow(real_solution[i][j][k][p % 4], 2) + pow(imag_solution[i][j][k][p % 4], 2);
 
 			// Contract full solution and save it to solution1D
 			for(int i = 0; i < SPZ; ++i)
@@ -488,18 +481,11 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 			for(int i = 0; i < SPX; ++i)
 				solutionXD[i][p/reduction_coeff] = contraction(full_solution, 1, i);
 		}
-
-		// Move new iteration in real/imag solution back an index to restart process
-		for(int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k)
-				{
-					real_solution[i][j][k][0] = real_solution[i][j][k][1];
-					imag_solution[i][j][k][0] = imag_solution[i][j][k][1];
-				}
-
-
 	}
+
+	clock_t end = clock();
+
+	printf("RTP took %f seconds\n", ((double) (end - start)) / CLOCKS_PER_SEC);
 
 	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "xsolution.txt");
 	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "zsolution.txt");
@@ -584,8 +570,6 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 
 	loadMatrix(real_solution, "groundState3D.txt");
 
-	clock_t start = clock();
-
 	for (int p = 1; p < iterations; ++p){
 
 		advance(real_solution, (p - 1) % 4);
@@ -595,9 +579,6 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 			normalize(real_solution);
 	}
 
-	clock_t end = clock();
-
-	printf("%f\n", ((double) (end - start)) / CLOCKS_PER_SEC);
 
 	normalize(real_solution);
 
@@ -611,7 +592,7 @@ int main(){
 	double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
 
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
