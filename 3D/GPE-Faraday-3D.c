@@ -1,17 +1,27 @@
 /*
 This file has the same functionality as GPE-Faraday-3D.c but I have changed several operations, functions, or structural elements to try and make it faster.
 Code that has been optimized is often less maintainable or less readable, hence the intention of keeping the original code and the optimized code separate.
+
 This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
 and then plots the solution using a surface plot command on gnuplot
+
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
 The preprocessor constant W is the harmonic potential constant omega
+
+I have implemented parallelization capabilities for RTP. To make use of it, you must use the following line to compile and run the code
+
+gcc -Wl,--stack,1073741824 GPE-Faraday-3D.c -fopenmp -o GPE-Faraday-3D.exe %% GPE-Faraday-3D.exe
+
+the "Wl" flag increases the stack size and the -fopenmp flag turns on parallel funcitonality
+
+You can set the number of cores to use in the preprocessor constants 
+
 RESULTS:
 1) 80 length units along x and y direction --> g.s. has enough room along these directions
 TODO:
 1) Create stepTwo function for 2D -- postpone
-2) Implement loadMatrix and saveMatrix -- done
-3) Check ground state to see if you can reduce spatial dimensions
-4) Intead of moving code backwards in array, just set index access to modulus
+
+
 */
 
 #include <stdlib.h>
@@ -19,18 +29,22 @@ TODO:
 #include <math.h>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
+#include <unistd.h>
+#include <sys/time.h>
 #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 0.00000250
+#define TIME 0.00250
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
 #define ZLENGTH 210.0
-#define TIME_POINTS 15 //number of time points
+#define TIME_POINTS 160 //number of time points
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
 #define NOISE_VOLUME 0.0
+#define NUM_THREADS 2
 
 const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
 const double ydivisor = 1./ (12. * pow(YLENGTH / (SPY), 2));
@@ -63,9 +77,9 @@ const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
-const double WX = 1.;
-const double WY = 1.;
-const double WZ = 7./476;
+const double WX = 0.; // 1
+const double WY = 0.; // 1
+const double WZ = 0.; // 7./476
 const double G = 1000.;
 const double OMEGA = 2.;
 const double EPS = 0.0;
@@ -313,7 +327,7 @@ void loadMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
 
 // ----------------- Real Time Propagation Functions ---------------
 
-double f(double imag_temp[SPX][SPY][SPZ][4], double real_temp[SPX][SPY][SPZ][4], int i, int j, int k, int p, double t){
+/*double f(double imag_temp[SPX][SPY][SPZ][4], double real_temp[SPX][SPY][SPZ][4], int i, int j, int k, int p, double t){
 	// f gives the derivative for psi_real but for the K matrices because they need a function with a different argument
 	
 	double imag_part = imag_temp[i][j][k][p];
@@ -322,8 +336,8 @@ double f(double imag_temp[SPX][SPY][SPZ][4], double real_temp[SPX][SPY][SPZ][4],
 	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 	return -.5 * (Dxx(imag_temp, i, j, k, p) + Dyy(imag_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) + V * imag_part + new_G * (pow(real_part, 2) + pow(imag_part, 2)) * imag_part;
-}
-
+}*/
+/*
 double g(double real_temp[SPX][SPY][SPZ][4], double imag_temp[SPX][SPY][SPZ][4], int i, int j, int k, int p, double t){
 	// g gives the derivative for imag_temp but for the L matrices because they need a function with a different argument
 	
@@ -334,7 +348,7 @@ double g(double real_temp[SPX][SPY][SPZ][4], double imag_temp[SPX][SPY][SPZ][4],
 
 
 	return .5 * (Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i ,j ,k ,p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
-}
+}*/
 
 void addNoise(double initialCondition[SPX][SPY][SPZ][4], double waveNumber){
 	/*
@@ -410,17 +424,35 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	for(int i = 0; i < SPX; ++i)
 		solutionXD[i][0] = contraction(full_solution, 1, i);
 
-	clock_t start = clock();
-
 	double t;
+
+	#define V(i, j, k) (.5*( pow((i * HX - XLENGTH * 0.5) * WX, 2) + pow((j * HY - YLENGTH * 0.5) * WY, 2) + pow((k * HZ - ZLENGTH * 0.5) * WZ, 2)))
+	;
+	#define NEW_G ( (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G )
+	;
+	#define f(imag_temp, real_temp, i, j, k, p, t) (-.5*(Dxx(imag_temp, i, j, k, p) + Dyy(imag_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) + \
+	V(i, j, k) * imag_temp[i][j][k][p] + NEW_G * (pow(real_temp[i][j][k][p], 2) + pow(imag_temp[i][j][k][p], 2)) * imag_temp[i][j][k][p])
+	;
+	#define g(real_temp, imag_temp, i, j, k, p, t) (.5 * (Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i ,j ,k ,p)) - \
+	V(i, j, k) * real_temp[i][j][k][p] - NEW_G * (pow(real_temp[i][j][k][p], 2) + pow(imag_temp[i][j][k][p], 2)) * real_temp[i][j][k][p])
+	;
+
+	int i, j, k;
+
+	long start, end;
+    struct timeval timecheck;
+    gettimeofday(&timecheck, NULL);
+    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
 	{
 
 		t = Dt * (p - 1); //Forward Euler step
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for (int k = 0; k < SPZ; ++k){
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
+		for (i = 0; i < SPX; ++i)
+			for (j = 0; j < SPY; ++j)
+				for (k = 0; k < SPZ; ++k){
 					K[i][j][k][0] = f(imag_solution, real_solution, i, j, k, (p - 1) % 4, t);
 					L[i][j][k][0] = g(real_solution, imag_solution, i, j, k, (p - 1) % 4, t);
 					real_temp[i][j][k][1] = real_solution[i][j][k][(p - 1) % 4] + .5 * Dt * K[i][j][k][0]; 
@@ -428,9 +460,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				}
 
 		t = t + .5 * Dt; //Add half a time step 
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k){
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
+		for (i = 0; i < SPX; ++i)
+			for (j = 0; j < SPY; ++j)
+				for(k = 0; k < SPZ; ++k){
 					K[i][j][k][1] = f(imag_temp, real_temp, i, j, k, 1, t);
 					L[i][j][k][1] = g(real_temp, imag_temp, i, j, k, 1, t);
 					real_temp[i][j][k][2] = real_solution[i][j][k][(p - 1) % 4] + .5 * Dt * K[i][j][k][1];
@@ -439,9 +472,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 
 		// t does not change for this step
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k){
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
+		for (i = 0; i < SPX; ++i)
+			for (j = 0; j < SPY; ++j)
+				for(k = 0; k < SPZ; ++k){
 					K[i][j][k][2] = f(imag_temp, real_temp, i, j, k, 2, t);
 					L[i][j][k][2] = g(real_temp, imag_temp, i, j, k, 2, t);
 					real_temp[i][j][k][3] = real_solution[i][j][k][(p - 1) % 4] + Dt * K[i][j][k][2];
@@ -449,17 +483,21 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 				}	
 
 		t = Dt * p; //Add full step for Backward Euler step
-		for (int i = 0; i < SPX; ++i)
-			for (int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k){
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS) private(k_3, l_3)
+		for (i = 0; i < SPX; ++i){
+			for (j = 0; j < SPY; ++j){
+				for(k = 0; k < SPZ; ++k){
 					k_3 = f(imag_temp, real_temp, i, j, k, 3, t);
 					l_3 = g(real_temp, imag_temp, i, j, k, 3, t);
 					real_solution[i][j][k][p % 4] = real_solution[i][j][k][(p - 1) % 4] + 1./6 * Dt * (K[i][j][k][0] + 2 * K[i][j][k][1] + 2 * K[i][j][k][2] + k_3);
 					imag_solution[i][j][k][p % 4] = imag_solution[i][j][k][(p - 1) % 4] + 1./6 * Dt * (L[i][j][k][0] + 2 * L[i][j][k][1] + 2 * L[i][j][k][2] + l_3);
 				}
+			}
+		}
 
 		if((p % reduction_coeff) == 0){
 			// Add new iteration to full solution
+			#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
 			for(int i = 0; i < SPX; ++i)
 				for(int j = 0; j < SPY; ++j)
 					for(int k = 0; k < SPZ; ++k)
@@ -474,9 +512,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 		}
 	}
 
-	clock_t end = clock();
+	gettimeofday(&timecheck, NULL);
+    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
-	printf("RTP took %f seconds\n", ((double) (end - start)) / CLOCKS_PER_SEC);
+    printf("%ld milliseconds elapsed\n", (end - start));
 
 	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "xsolution.txt");
 	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "zsolution.txt");
