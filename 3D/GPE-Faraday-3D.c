@@ -1,23 +1,17 @@
 /*
 This file has the same functionality as GPE-Faraday-3D.c but I have changed several operations, functions, or structural elements to try and make it faster.
 Code that has been optimized is often less maintainable or less readable, hence the intention of keeping the original code and the optimized code separate.
-
 This program numerically finds the thomas fermi ground state, solves the nonlinear schrodinger equation with harmonic potential in 2D using a 4th order Runge Kutta Scheme
 and then plots the solution using a surface plot command on gnuplot
-
 Important constants are defined as preprocessor constants (like the desired length of time for the solution)
 The preprocessor constant W is the harmonic potential constant omega
-
 RESULTS:
 1) 80 length units along x and y direction --> g.s. has enough room along these directions
-
 TODO:
 1) Create stepTwo function for 2D -- postpone
 2) Implement loadMatrix and saveMatrix -- done
 3) Check ground state to see if you can reduce spatial dimensions
 4) Intead of moving code backwards in array, just set index access to modulus
-
-
 */
 
 #include <stdlib.h>
@@ -32,7 +26,7 @@ TODO:
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
 #define ZLENGTH 210.0
-#define TIME_POINTS 10 //number of time points
+#define TIME_POINTS 15 //number of time points
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
@@ -61,10 +55,8 @@ const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 // Full Second Order Spatial Derivative 
 #define Dxx(array, x, y, z, pee) ( (array[mod(x + 1, SPX)][y][z][pee] - 2. * array[mod(x , SPX)][y][z][pee] + array[mod(x - 1, SPX)][y][z][pee]) * xdivisor)
 ;
-
 #define Dyy(array, x, y, z, pee) ( (array[x][mod(y + 1, SPY)][z][pee] - 2. * array[x][mod(y , SPY)][z][pee] +  array[x][mod(y - 1, SPY)][z][pee]) * ydivisor)
 ;
-
 #define Dzz(array, x, y ,z , pee) ( ( array[x][y][mod(z + 1, SPZ)][pee] - 2.* array[x][y][mod(z , SPZ)][pee] + array[x][y][mod(z - 1, SPZ)][pee] ) * zdivisor)
 ;*/
 
@@ -130,7 +122,6 @@ void plotTimeDependence(int sp, int arg_time_points, double solution1D[sp][arg_t
 double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
 	/*
 	This function will take a 3D matrix and contract dimensions perpendicular to the contraction_axis
-
 	INPUTS:
 	solution -- 4D matrix holding the 3D solution at a single slice in time
 	contraction_axis -- integer indicating which axis should stay (e.g., if this var == 3, then the x and y dimensions will be integrated out)
@@ -342,7 +333,7 @@ double g(double real_temp[SPX][SPY][SPZ][4], double imag_temp[SPX][SPY][SPZ][4],
 	double new_G = (t < T_MOD) ? G * (1. +  EPS * sin(OMEGA * t)) : G;
 
 
-	return .5 * (Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(imag_temp, i ,j ,k ,p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
+	return .5 * (Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i ,j ,k ,p)) - V * real_part - new_G * (pow(real_part, 2) + pow(imag_part, 2)) * real_part;
 }
 
 void addNoise(double initialCondition[SPX][SPY][SPZ][4], double waveNumber){
@@ -592,7 +583,7 @@ int main(){
 	double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
-	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
