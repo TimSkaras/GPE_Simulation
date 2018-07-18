@@ -21,6 +21,8 @@ RESULTS:
 TODO:
 1) Create stepTwo function for 2D -- postpone
 
+160 -- 106 seconds
+
 
 */
 
@@ -39,11 +41,11 @@ TODO:
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
 #define ZLENGTH 210.0
-#define TIME_POINTS 160 //number of time points
+#define TIME_POINTS 15 //number of time points
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
-#define NOISE_VOLUME 0.0
+#define NOISE_VOLUME 0.06
 #define NUM_THREADS 2
 
 const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
@@ -77,12 +79,12 @@ const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
-const double WX = 0.; // 1
-const double WY = 0.; // 1
-const double WZ = 0.; // 7./476
+const double WX = 1.; // 1
+const double WY = 1.; // 1
+const double WZ = 7./476; // 7./476
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.0;
+const double EPS = 0.15;
 const double WAVENUMBER_INPUT = 1.1;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
 const int RED_COEFF = 1;
@@ -177,11 +179,17 @@ void plotZDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
 
     double zvals[SPZ];
     double zdensity[SPZ];
+    double full_solution[SPX][SPY][SPZ][4];
+
+    for(int i = 0; i < SPX; ++i)
+    	for(int j = 0; j < SPY; ++j)
+    		for(int k = 0; k < SPZ; ++k)
+    			full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2);
 
     for (int i = 0; i < SPZ; ++i)
     {
         zvals[i] = HZ * i;
-        zdensity[i] = contraction(initialCondition, 3, i);
+        zdensity[i] = contraction(full_solution, 3, i);
     }
 
     char * zcommandsForGnuplot[] =  {"set title \"Z-density\"", "set xlabel \"z-axis\"", "plot 'zdensity.temp' with lines"};
@@ -194,11 +202,17 @@ void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
 
     double xvals[SPX];
     double xdensity[SPX];
+    double full_solution[SPX][SPY][SPZ][4];
+
+    for(int i = 0; i < SPX; ++i)
+    	for(int j = 0; j < SPY; ++j)
+    		for(int k = 0; k < SPZ; ++k)
+    			full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2);
 
     for (int i = 0; i < SPX; ++i)
     {
         xvals[i] = HX * i;
-        xdensity[i] = contraction(initialCondition, 1, i);
+        xdensity[i] = contraction(full_solution, 1, i);
     }
 
     char * xcommandsForGnuplot[] =  {"set title \"X-density\"", "set xlabel \"x-axis\"", "plot 'xdensity.temp' with lines"};
@@ -244,8 +258,8 @@ void saveSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points
 	fprintf(f, "%d %d %d\n\n", SPX, SPY, SPZ);
 	fprintf(f, "%f %f %f\n", XLENGTH, YLENGTH, ZLENGTH);
 
-	for(int i = 0; i < sp; ++i)
-		for(int j = 0; j < arg_time_points; ++j)
+	for(int j = 0; j < arg_time_points; ++j)
+		for(int i = 0; i < sp; ++i)
 			fprintf(f, "%e\n", matrix[i][j]);
 
 	fclose(f);
@@ -267,8 +281,8 @@ void loadSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points
 
 	fscanf(f, "%lf %lf %lf", &xlen, &ylen, &zlen);
 
-	for(int i = 0; i < sp; ++i)
-		for(int j = 0; j < arg_time_points; ++j){
+	for(int j = 0; j < arg_time_points; ++j)
+		for(int i = 0; i < sp; ++i){
 			fscanf(f, "%lf", &buff);
 			matrix[i][j] = buff;
 		}
@@ -600,15 +614,32 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 
 	loadMatrix(real_solution, "groundState3D.txt");
 
+	#define fgs(real_temp, i, j, k, p) ((Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i, j, k, p)) / 2  - V(i, j, k) * real_temp[i][j][k][p] - G * pow(real_temp[i][j][k][p] , 3))
+	;
+	
+	long start, end;
+    struct timeval timecheck;
+    gettimeofday(&timecheck, NULL);
+    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+
 	for (int p = 1; p < iterations; ++p){
 
-		advance(real_solution, (p - 1) % 4);
-				
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
+		for(int i = 0; i < SPX; ++i)	
+			for(int j = 0; j < SPY; ++j)
+				for(int k = 0; k < SPZ; ++k){
+					real_solution[i][j][k][p % 4] = real_solution[i][j][k][(p - 1) % 4] + Delta_t * fgs(real_solution, i, j, k, (p - 1) % 4);
+				}
+
 		// Now normalize the solution back to 1
 		if(p % 20 == 0)	
 			normalize(real_solution);
 	}
 
+	gettimeofday(&timecheck, NULL);
+    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+
+    printf("%ld milliseconds elapsed\n", (end - start));
 
 	normalize(real_solution);
 
@@ -622,19 +653,19 @@ int main(){
 	double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
 	double initialCondition[SPX][SPY][SPZ][4];
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 1};
 
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
 
 	// find the ground state
-	// findGroundState(initialCondition, 4000);
-
-	// Run RTP
-	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+	// findGroundState(initialCondition, 1000);
 
 	// plotZDensity3D(initialCondition);
 	// plotXDensity3D(initialCondition);
+	// Run RTP
+	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+
 
 	return 0;
 }
