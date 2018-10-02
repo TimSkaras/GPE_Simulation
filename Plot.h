@@ -297,7 +297,7 @@ void plotSurface3DReduced(char * commandsForGnuplot[], struct plot_information3D
     double Dt = info.T / arg_time_points;
     double H = info.length/space_points;
 
-    double time_samples = 70.;
+    double time_samples = 250.;
     double space_samples = 400.;
 
     int index_t = (int) ceil(arg_time_points/time_samples);

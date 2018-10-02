@@ -23,6 +23,13 @@ TODO:
 
 160 -- 106 seconds
 
+To-Do:
+1) Demonstrate that trap depth is not an issue
+2) Plot how time to peak changes with modulation frequency
+3) Plot how peak amplitude of resonant mode changes with modulation frequency of scattering length
+4) Plot how peak frequency does not change with modulation frequency
+5) Calculate width by taking the expectation value of |x|
+
 
 */
 
@@ -34,25 +41,23 @@ TODO:
 #include <omp.h>
 #include <unistd.h>
 #include <sys/time.h>
-
-#include "../Plot.h"
-#include "../random.h"
+// #include "..\Plot.h"
 
 #define PI M_PI
-#define TIME 200.0
+#define TIME 0.00250
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
-#define ZLENGTH 250.0
-#define TIME_POINTS 14000 //number of time points
+#define ZLENGTH 210.0
+#define TIME_POINTS 15 //number of time points
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
 #define NOISE_VOLUME 0.06
-#define NUM_THREADS 2
+#define NUM_THREADS 1
 
-const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
-const double ydivisor = 1./ (12. * pow(YLENGTH / (SPY), 2));
-const double zdivisor = 1./ (12. * pow(ZLENGTH / (SPZ), 2));
+const double xdivisor = (1./ (12. * pow(XLENGTH / (SPX), 2)) );
+const double ydivisor = (1./ (12. * pow(YLENGTH / (SPY), 2)) );
+const double zdivisor = (1./ (12. * pow(ZLENGTH / (SPZ), 2)) );
 // Full Fourth Order Spatial Derivative
 #define Dxx(array, x, y, z, pee) ( (-1. * array[mod(x + 2, SPX)][y][z][pee] + 16.* array[mod(x + 1, SPX)][y][z][pee] - \
 		30. * array[mod(x , SPX)][y][z][pee] + 16. * array[mod(x - 1, SPX)][y][z][pee] +  -1 * array[mod(x - 2, SPX)][y][z][pee]) * xdivisor)
@@ -89,7 +94,7 @@ const double OMEGA = 2.;
 const double EPS = 0.15;
 const double WAVENUMBER_INPUT = 1.1;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-const int RED_COEFF = 20;
+const int RED_COEFF = 1;
 
 struct plot_settings{
 	/*
@@ -116,25 +121,6 @@ int mod(int a, int b){
 
     int r = a % b;
     return r < 0 ? r + b : r;
-}
-
-void plotTimeDependence(int sp, int arg_time_points, double solution1D[sp][arg_time_points], struct plot_settings plot){
-
-	// Set up commands for gnuplot
-	char plotCommand[100];
-	char title[100];
-	// sprintf(plotCommand, "plot [0:%d] [-2:2] 'sol.temp' ", TIME);
-	sprintf(plotCommand,"splot '%s' with lines", plot.output_file);
-	sprintf(title, "set title \"");
-	strcat(title, plot.title);
-	strcat(title, "\"");
-	char * commands[15] = { title, "set xlabel \"Position\"", "show xlabel", "set ylabel \"Time\"", "show ylabel" , plotCommand};
-	int num_commands = 6;
-	
-	struct plot_information3D info = { .num_commands = num_commands, \
-		.output_file = plot.output_file, .length = (sp == SPX) ? XLENGTH:ZLENGTH , .T = TIME, .x_length = XLENGTH, .y_length = YLENGTH, .z_length = ZLENGTH};
-
-	plotSurface3DReduced(commands, info , sp, arg_time_points, solution1D);
 }
 
 double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int contraction_index ){
@@ -174,85 +160,6 @@ double contraction(double solution[SPX][SPY][SPZ][4], int contraction_axis, int 
 	}
 
 	return integral_holder;
-}
-
-void plotZDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
-    // Plots the number density for the initial condition/g.s. along the z axis
-
-    double zvals[SPZ];
-    double zdensity[SPZ];
-    double full_solution[SPX][SPY][SPZ][4];
-
-    for(int i = 0; i < SPX; ++i)
-    	for(int j = 0; j < SPY; ++j)
-    		for(int k = 0; k < SPZ; ++k)
-    			full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2);
-
-    for (int i = 0; i < SPZ; ++i)
-    {
-        zvals[i] = HZ * i;
-        zdensity[i] = contraction(full_solution, 3, i);
-    }
-
-    char * zcommandsForGnuplot[] =  {"set title \"Z-density\"", "set xlabel \"z-axis\"", "plot 'zdensity.temp' with lines"};
-    int num_commands = 3;
-    plotFunction(zcommandsForGnuplot, num_commands, zvals, zdensity, SPZ, "zdensity.temp");
-}
-
-void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
-    // Plots the number density for the initial condition/g.s. along the z axis
-
-    double xvals[SPX];
-    double xdensity[SPX];
-    double full_solution[SPX][SPY][SPZ][4];
-
-    for(int i = 0; i < SPX; ++i)
-    	for(int j = 0; j < SPY; ++j)
-    		for(int k = 0; k < SPZ; ++k)
-    			full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2);
-
-    for (int i = 0; i < SPX; ++i)
-    {
-        xvals[i] = HX * i;
-        xdensity[i] = contraction(full_solution, 1, i);
-    }
-
-    char * xcommandsForGnuplot[] =  {"set title \"X-density\"", "set xlabel \"x-axis\"", "plot 'xdensity.temp' with lines"};
-    int num_commands = 3;
-    plotFunction(xcommandsForGnuplot, num_commands, xvals, xdensity, SPX, "xdensity.temp");
-}
-
-void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
-	/*
-	* This function takes the squared solution matrix, finds the normalization at each point in time and plots the error (normalization should equal unity)
-	*/
-
-	double norm[arg_time_points];
-	double xvals[arg_time_points];
-	double Dt = T/arg_time_points;
-
-	for(int p = 0; p < arg_time_points; ++p){
-		norm[p] = 0.0;
-		for(int i = 0; i < SPZ; ++i)
-			norm[p] = norm[p] + solution1D[i][p];
-		norm[p] = norm[p] * HZ;
-	}
-
-	// the norm should be unity, so we can subtract off 1 to get the error at each point in time
-	for(int i = 1; i < arg_time_points; ++i)
-		norm[i] = norm[i] - norm[0];
-
-	norm[0] = norm[0] - norm[0];
-	// Now we plot the normalization array
-	printf("%e\n", norm[0]);
-
-	// Create array of x values to plot then norm against
-	for (int p = 0; p < arg_time_points; ++p)
-		xvals[p] = p * Dt;
-	
-	char * commandsForGnuplot[] = {"set title \"Normalization Error vs. Time\"", "set xlabel \"Time\"", "set ylabel \"Normalization Error\"" , "plot 'norm.temp' with lines"};
-	int num_commands = 4;
-	plotFunction(commandsForGnuplot, num_commands, xvals, norm, arg_time_points, "norm.temp");
 }
 
 void saveSolution(int sp, int arg_time_points, double matrix[sp][arg_time_points], char * filename){
@@ -349,9 +256,6 @@ void addNoise(double initialCondition[SPX][SPY][SPZ][4], double waveNumber){
 	This function adds noise to the initial condition matrix
 	*/
 
-	// Choose a random seed for the generator
-	seed();
-
 	// First we need to find a wavelength of noise that has an integer number of wavelengths within the space 
 	//  	of the trap and also is close to the assigned wavenumber in the function input
 	double num = waveNumber * ZLENGTH / PI / 2.;
@@ -436,10 +340,10 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 	int i, j, k;
 
-	long start, end;
-    struct timeval timecheck;
-    gettimeofday(&timecheck, NULL);
-    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+	// long start, end;
+ //    struct timeval timecheck;
+ //    gettimeofday(&timecheck, NULL);
+ //    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
 	// Real Time Propagation
 	for (int p = 1; p < arg_time_points; ++p)
@@ -509,27 +413,14 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 		}
 	}
 
-	gettimeofday(&timecheck, NULL);
-    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+	// gettimeofday(&timecheck, NULL);
+ //    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
-    printf("%ld milliseconds elapsed\n", (end - start));
+ //    printf("%ld milliseconds elapsed\n", (end - start));
 
 	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "xsolution.txt");
 	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "zsolution.txt");
 
-	if (plot.plot3D == 1){
-
-		struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
-		struct plot_settings plotZ = {.plot3D = 1, .title = "Real Time Solution Linear Z Density", .plot_normalization = 1, .output_file = "solZD.temp"};
-
-		// Now lets plot our results
-		plotTimeDependence(SPX, arg_time_points/reduction_coeff, solutionXD, plotX);
-		plotTimeDependence(SPZ, arg_time_points/reduction_coeff, solutionZD, plotZ);
-	}
-	if (plot.plot_normalization == 1){
-
-		plotNormalization(arg_time_points/reduction_coeff, solutionZD, T);
-	}
 }
 
 // -------------Imaginary Time Propagation Functions------------
@@ -582,10 +473,10 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 	#define fgs(real_temp, i, j, k, p) ((Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i, j, k, p)) / 2  - V(i, j, k) * real_temp[i][j][k][p] - G * pow(real_temp[i][j][k][p] , 3))
 	;
 	
-	long start, end;
-    struct timeval timecheck;
-    gettimeofday(&timecheck, NULL);
-    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+	// long start, end;
+ //    struct timeval timecheck;
+ //    gettimeofday(&timecheck, NULL);
+ //    start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
 	for (int p = 1; p < iterations; ++p){
 
@@ -601,10 +492,10 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 			normalize(real_solution);
 	}
 
-	gettimeofday(&timecheck, NULL);
-    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
+	// gettimeofday(&timecheck, NULL);
+ //    end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
-    printf("%ld milliseconds elapsed\n", (end - start));
+    // printf("%ld milliseconds elapsed\n", (end - start));
 
 	normalize(real_solution);
 
@@ -629,22 +520,7 @@ int main(){
 	// plotZDensity3D(initialCondition);
 	// plotXDensity3D(initialCondition);
 	// Run RTP
-	// realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
-
-	double solutionXD[SPX][TIME_POINTS/RED_COEFF];
-	double solutionZD[SPZ][TIME_POINTS/RED_COEFF];
-
-	loadSolution(SPX, TIME_POINTS / RED_COEFF, solutionXD, "../Results/xsolution2.txt");
-	loadSolution(SPZ, TIME_POINTS / RED_COEFF, solutionZD, "../Results/zsolution2.txt");
-
-	struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
-	struct plot_settings plotZ = {.plot3D = 1, .title = "Real Time Solution Linear Z Density", .plot_normalization = 1, .output_file = "solZD.temp"};
-
-	// Now lets plot our results
-	plotTimeDependence(SPX, TIME_POINTS/RED_COEFF, solutionXD, plotX);
-	plotTimeDependence(SPZ, TIME_POINTS/RED_COEFF, solutionZD, plotZ);
-
-	// plotNormalization(TIME_POINTS/RED_COEFF, solutionZD, TIME);
+	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
 
 	return 0;
