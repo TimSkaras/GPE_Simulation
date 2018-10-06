@@ -3,6 +3,14 @@
 #include <math.h>
 #include <sys/time.h>
 
+int mod(int a, int b){
+	// This is a standard modulus function -- always outputs a positive number
+	// E.g., mod(-1, 3) = 2
+
+    int r = a % b;
+    return r < 0 ? r + b : r;
+}
+
 void seed(){
 
 	// Choose pseudo-random seed
