@@ -39,15 +39,15 @@ TODO:
 #include "../random.h"
 
 #define PI M_PI
-#define TIME 200.0 // 200
+#define TIME .02000 // 200
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
 #define ZLENGTH 350.0
-#define TIME_POINTS 14000 //number of time points  	14000
+#define TIME_POINTS 6 //number of time points  	14000
 #define SPX 32 //600
 #define SPY 32 //20
 #define SPZ 512
-#define NUM_THREADS 1
+#define NUM_THREADS 2
 
 const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
 const double ydivisor = 1./ (12. * pow(YLENGTH / (SPY), 2));
@@ -66,17 +66,6 @@ const double zdivisor = 1./ (12. * pow(ZLENGTH / (SPZ), 2));
 ;
 
 
-/*const double xdivisor = 1./ (2. * pow(XLENGTH / (SPX), 2));
-const double ydivisor = 1./ (2. * pow(YLENGTH / (SPY), 2));
-const double zdivisor = 1./ (2. * pow(ZLENGTH / (SPZ), 2));
-// Full Second Order Spatial Derivative 
-#define Dxx(array, x, y, z, pee) ( (array[mod(x + 1, SPX)][y][z][pee] - 2. * array[mod(x , SPX)][y][z][pee] + array[mod(x - 1, SPX)][y][z][pee]) * xdivisor)
-;
-#define Dyy(array, x, y, z, pee) ( (array[x][mod(y + 1, SPY)][z][pee] - 2. * array[x][mod(y , SPY)][z][pee] +  array[x][mod(y - 1, SPY)][z][pee]) * ydivisor)
-;
-#define Dzz(array, x, y ,z , pee) ( ( array[x][y][mod(z + 1, SPZ)][pee] - 2.* array[x][y][mod(z , SPZ)][pee] + array[x][y][mod(z - 1, SPZ)][pee] ) * zdivisor)
-;*/
-
 const double HX = XLENGTH / (SPX);
 const double HY = YLENGTH / (SPY);
 const double HZ = ZLENGTH / (SPZ);
@@ -85,9 +74,9 @@ const double WY = 1.; // 1
 const double WZ = 7./476; // 7./476
 const double G = 1000.;
 const double OMEGA = 2.;
-const double EPS = 0.15;
+const double EPS = 0.20;
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
-const int RED_COEFF = 20;
+const int RED_COEFF = 1;
 
 struct plot_settings{
 	/*
@@ -191,7 +180,7 @@ void plotZDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
 
     double zvals[SPZ];
     double zdensity[SPZ];
-    double full_solution[SPX][SPY][SPZ][4];
+    double (*full_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
 
     for(int i = 0; i < SPX; ++i)
     	for(int j = 0; j < SPY; ++j)
@@ -207,6 +196,8 @@ void plotZDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
     char * zcommandsForGnuplot[] =  {"set title \"Z-density\"", "set xlabel \"z-axis\"", "plot '../FaradayExperiment/gs-zdensity.txt' with lines"};
     int num_commands = 3;
     plotFunction(zcommandsForGnuplot, num_commands, zvals, zdensity, SPZ, "../FaradayExperiment/gs-zdensity.txt");
+
+    free(full_solution);
 }
 
 void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
@@ -214,7 +205,7 @@ void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
 
     double xvals[SPX];
     double xdensity[SPX];
-    double full_solution[SPX][SPY][SPZ][4];
+    double (*full_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
 
     for(int i = 0; i < SPX; ++i)
     	for(int j = 0; j < SPY; ++j)
@@ -230,6 +221,8 @@ void plotXDensity3D(double initialCondition[SPX][SPY][SPZ][4]){
     char * xcommandsForGnuplot[] =  {"set title \"X-density\"", "set xlabel \"x-axis\"", "plot 'xdensity.temp' with lines"};
     int num_commands = 3;
     plotFunction(xcommandsForGnuplot, num_commands, xvals, xdensity, SPX, "xdensity.temp");
+
+    free(full_solution);
 }
 
 void plotNormalization(int arg_time_points, double solution1D[SPZ][arg_time_points], double T){
@@ -402,18 +395,18 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 	double Dt = T/arg_time_points;
 
-	double real_temp[SPX][SPY][SPZ][4]; // This matrix and the one below will be used to store the state of the system at intermediary time steps -- time steps 
-	double imag_temp[SPX][SPY][SPZ][4]; // that are need to do RK4 but are not essential otherwise and can therefore be discarded after each iteration
-	double K[SPX][SPY][SPZ][3];
-	double L[SPX][SPY][SPZ][3];
+    double (*real_temp)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // This matrix and the one below will be used to store the state of the system at intermediary time steps -- time steps 
+	double (*imag_temp)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // that are need to do RK4 but are not essential otherwise and can therefore be discarded after each iteration
+	double (*K)[SPY][SPZ][3] = malloc(sizeof(double[SPX][SPY][SPZ][3]));
+	double (*L)[SPY][SPZ][3] = malloc(sizeof(double[SPY][SPZ][SPZ][3]));
 	double k_3, l_3;
 	int reduction_coeff = RED_COEFF;
 
-	double full_solution[SPX][SPY][SPZ][4]; // This matrix stores the psi squared solution at each time slice to make contraction more convenient
-	double solutionXD[SPX][arg_time_points/reduction_coeff];
-	double solutionZD[SPZ][arg_time_points/reduction_coeff]; //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
-	double condensateWidth[arg_time_points/reduction_coeff];
-	double timeP[arg_time_points/reduction_coeff];
+	double (*full_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
+	double (*solutionXD)[arg_time_points/reduction_coeff] = malloc(sizeof(double[SPX][arg_time_points/reduction_coeff]));
+	double (*solutionZD)[arg_time_points/reduction_coeff] = malloc(sizeof(double[SPZ][arg_time_points/reduction_coeff])); //This matrix contracts the full solution along the radial 'skinny' dimension because it is not essential to observe dynamics
+	double (*condensateWidth) = malloc(sizeof(double) * arg_time_points/reduction_coeff );
+	double (*timeP) = malloc(sizeof(double) * arg_time_points/reduction_coeff);
 
 	// Add the noise to the ground state
 	addNoise(initialCondition);
@@ -531,8 +524,8 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
     printf("%ld milliseconds elapsed\n", (end - start));
 
-	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "../FaradayExperiment/xsolutionT1_res.txt");
-	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "../FaradayExperiment/zsolutionT1_res.txt");
+	// saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "../FaradayExperiment/xsolutionT1_res.txt");
+	// saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "../FaradayExperiment/zsolutionT1_res.txt");
 
 	if (plot.plot3D == 1){
 
@@ -551,6 +544,18 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
 		plotNormalization(arg_time_points/reduction_coeff, solutionZD, T);
 	}
+
+	// Free all dynamically allocated variables
+	free(real_temp);
+	free(imag_temp);
+	free(K);
+	free(L);
+	free(full_solution);
+	free(solutionXD);
+	free(solutionZD);
+	free(condensateWidth);
+	free(timeP);
+
 }
 
 // -------------Imaginary Time Propagation Functions------------
@@ -635,11 +640,11 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 int main(){
 
 	// Declare initial variables
-	double real_solution[SPX][SPY][SPZ][4]; // This will be the solution matrix -- it will only hold the state of the system at one time slice
-	double imag_solution[SPX][SPY][SPZ][4]; // Same as real solution but for the imaginary component of Psi
-	double initialCondition[SPX][SPY][SPZ][4];
+	double (*real_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // This will be the solution matrix -- it will only hold the state of the system at one time slice
+	double (*imag_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // Same as real solution but for the imaginary component of Psi
+	double (*initialCondition)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
 
-	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
+	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
 
 	// Load the groundstate
 	loadMatrix(initialCondition, "groundState3D.txt");
@@ -649,13 +654,13 @@ int main(){
 
 	// addNoise(initialCondition);
 
-	plotZDensity3D(initialCondition);
+	// plotZDensity3D(initialCondition);
 	// plotXDensity3D(initialCondition);
 	// Run RTP
-	// realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
-	double solutionXD[SPX][TIME_POINTS/RED_COEFF];
-	double solutionZD[SPZ][TIME_POINTS/RED_COEFF];
+	double (*solutionXD)[TIME_POINTS/RED_COEFF] = malloc(sizeof(double[SPX][TIME_POINTS/RED_COEFF]));
+	double (*solutionZD)[TIME_POINTS/RED_COEFF] = malloc(sizeof(double[SPZ][TIME_POINTS/RED_COEFF]));
 
 	// loadSolution(SPX, TIME_POINTS / RED_COEFF, solutionXD, "../Results/xsolution3.txt");
 	// loadSolution(SPZ, TIME_POINTS / RED_COEFF, solutionZD, "../Results/zsolution3.txt");
@@ -669,6 +674,14 @@ int main(){
 
 	// plotNormalization(TIME_POINTS/RED_COEFF, solutionZD, TIME);
 
+
+	free(real_solution);
+	free(imag_solution);
+	free(initialCondition);
+	free(solutionXD);
+	free(solutionZD);
+
+	printf("test 2\n");
 
 	return 0;
 }
