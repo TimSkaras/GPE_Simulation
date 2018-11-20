@@ -4,6 +4,7 @@ clear all
 omega = [1.8 1.9 2.0 2.1 2.2];
 tmax = [];
 kmax = [];
+Amin_kmax = [];
 
 % The ordering of the indices corresponds to the omega for each experiment
 % e.g., exp 1   omega = 2
@@ -13,7 +14,7 @@ kmax = [];
 %       exp 5   omega = 2.2, T = 400
 idx = [4 2 1 3 5];
 
-for i = idx
+for i = [6]
 
     filename = strcat('../FaradayExperiment/zsolution_EXP_', string(i), '.txt');
     
@@ -21,10 +22,29 @@ if ismember(i, [4 5])
     [k, t, kspace] = extractKSpace(filename, 9, 400);
     
     % Throw out very low modes because they don't correspond to perturbations
-    kspace = kspace(8:end,:);
+    % Also, create column cutoff to ensure we get the first major maximum
+    col_cutoff = 1100;
+    kspace = kspace(8:end,1:col_cutoff);
+    t = t(1:col_cutoff);
     k = k(8:end);
 
     [row col] = extractMaxIndex(kspace(1:end, 1:end));
+    [Amin_row Amin_col] = extractAminMaxIndex(k, t, kspace);
+    
+elseif ismember(i, [6])
+    
+    [k, t, kspace] = extractKSpace(filename, 9, 500);
+    
+    % Throw out very low modes because they don't correspond to perturbations
+    % Also, create column cutoff to ensure we get the first major maximum
+    col_cutoff = 1100;
+    kspace = kspace(8:end,1:end);
+    t = t(1:end);
+    k = k(8:end);
+
+    [row col] = extractMaxIndex(kspace(1:end, 1:end));
+    [Amin_row Amin_col] = extractAminMaxIndex(k, t, kspace);
+    
 else
     [k, t, kspace] = extractKSpace(filename, 9, 250);
     
@@ -33,36 +53,68 @@ else
     k = k(8:end);
 
     [row col] = extractMaxIndex(kspace);
+    [Amin_row Amin_col] = extractAminMaxIndex(k, t, kspace);
 end
 
 
 kmax = [kmax k(row)];
 tmax = [tmax t(col)];
+Amin_kmax = [Amin_kmax k(Amin_row)];
 
 end
 
-figure
-plot(omega, tmax)
-title('Time to Max Amplitude t_{max} vs. Modulation Frequency \omega/\omega_r')
-xlabel('\omega/\omega_r')
-ylabel('t_{max}')
+% Convert tmax to milliseconds 
+tmax = tmax / (2*pi*476) * 1000;
 
-figure
-hold on
-plot(omega, kmax)
-plot(1.8:.01:2.2, 1.1 * ones(size(1.8:.01:2.2)))
-title('Resonant Wave Number k_{max} vs. Modulation Frequency \omega/\omega_r')
-xlabel('\omega/\omega_r')
-ylabel('k_{max}')
-axis( [1.8 2.2 0 2])
-legend('Simulated k_{max}', 'Predicted k_{max}=1.1')
-
-% [K_grid, T_grid] = meshgrid(k, t);
 % figure
-% surf(K_grid', T_grid', kspace); 
-% title('Time Evolution of fft')
-% xlabel('k')
+% plot(omega, tmax)
+% title('Time to Max Amplitude t_{max} vs. Modulation Frequency \omega/\omega_r')
+% xlabel('\omega/\omega_r')
+% ylabel('t_{max} (ms)')
+% axis([1.75 2.25 50 110])
+
+% figure
+% hold on
+% plot(omega, kmax)
+% plot(1.8:.01:2.2, 1.1 * ones(size(1.8:.01:2.2)))
+% % plot(omega, Amin_kmax)
+% title('Resonant Wave Number k_{max} vs. Modulation Frequency \omega/\omega_r')
+% xlabel('\omega/\omega_r')
+% ylabel('k_{max}')
+% axis( [1.8 2.2 0 2])
+% legend('Simulated k_{max}', 'Predicted k_{max}=1.1', 'Amin Criterion')
+
+[K_grid, T_grid] = meshgrid(k, t);
+figure
+surf(K_grid', T_grid', kspace, 'EdgeColor', 'none'); 
+title('Time Evolution of fft')
+xlabel('k')
+ylabel('time (ms)')
+% 
+% figure
+% semilogy(t, kspace(54,1:end))
+% xlabel('time')
+% ylabel('Mode Amplitude')
+% set(gca, 'YScale', 'log');
+
+% 
+% figure
+% surf(K_grid', T_grid', sqrt(K_grid'.*kspace)); 
+% title('Time Evolution of Power Spectrum')
+% xlabel('k \Psi_k')
 % ylabel('time')
+
+
+% % Now construct kmax plot using Amin's criterion of domain validity
+% power_spec = sqrt(K_grid'.*kspace);
+% temp = ones(size(power_spec))./abs(.009 - power_spec);
+% 
+% figure
+% surf(K_grid', T_grid', power_spec); 
+% test = abs(power_spec - .009*ones(size(power_spec))) < .001;
+% [M I] = max(test);
+% [row col] = extractAminMaxIndex(k, t, kspace);
+
 
 function [k, t, kspace] = extractKSpace(filename, start_index, time)
 % Takes a filename with zsolution data and outputs fourier transform matrix
@@ -156,5 +208,18 @@ function [row col] = extractMaxIndex(kspace)
 row = I2;
 col = I(I2);
 
+
+end
+
+function [row col] = extractAminMaxIndex(k, t, kspace)
+
+[K_grid, T_grid] = meshgrid(k, t);
+
+power_spec = sqrt(K_grid'.*kspace);
+bool_mat = abs(power_spec - .009*ones(size(power_spec))) < .001;
+[M1 I1] = max(bool_mat);
+col = find(M1);
+col = col(1);
+row = I1(col);
 
 end
