@@ -39,15 +39,23 @@ TODO:
 #include "../random.h"
 
 #define PI M_PI
-#define TIME .02000 // 200
+#define TIME 0.2000 // 200
 #define XLENGTH 12.0 
 #define YLENGTH 12.0 
-#define ZLENGTH 350.0
-#define TIME_POINTS 6 //number of time points  	14000
+#define ZLENGTH 375.0
+#define TIME_POINTS 5	//number of time points  	14000, 32000 (T=500)
 #define SPX 32 //600
 #define SPY 32 //20
-#define SPZ 512
+#define SPZ 560
 #define NUM_THREADS 2
+
+#define GS_PATH_SAVE ""
+#define GS_PATH_LOAD "../FaradayExperiment/groundState3D_EXP_1.txt"
+#define WIDTH_PATH_SAVE "../FaradayExperiment/width_TEST.txt"
+#define XSOL_PATH_SAVE "../FaradayExperiment/xsolution_TEST.txt"
+#define ZSOL_PATH_SAVE "../FaradayExperiment/zsolution_TEST.txt"
+#define XSOL_PATH_LOAD ""
+#define ZSOL_PATH_LOAD ""
 
 const double xdivisor = 1./ (12. * pow(XLENGTH / (SPX), 2));
 const double ydivisor = 1./ (12. * pow(YLENGTH / (SPY), 2));
@@ -72,9 +80,10 @@ const double HZ = ZLENGTH / (SPZ);
 const double WX = 1.; // 1
 const double WY = 1.; // 1
 const double WZ = 7./476; // 7./476
-const double G = 1000.;
-const double OMEGA = 2.;
+const double G = 1070.;
+const double OMEGA = 2.0;
 const double EPS = 0.20;
+const double NOISE_SIGMA = 5 * pow(10, -4);
 const double T_MOD = 5 * PI; // Amount of time the scattering length is modulated
 const int RED_COEFF = 1;
 
@@ -347,7 +356,7 @@ void loadMatrix(double matrix[SPX][SPY][SPZ][4], char * filename){
 
 // ----------------- Real Time Propagation Functions ---------------
 
-void addNoise(double initialCondition[SPX][SPY][SPZ][4]){
+void addNoise(double real_solution[SPX][SPY][SPZ][4], double imag_solution[SPX][SPY][SPZ][4]){
 	/*
 	* 	This function adds noise to the initial condition matrix
 	*/
@@ -361,16 +370,17 @@ void addNoise(double initialCondition[SPX][SPY][SPZ][4]){
 	int n_max = (int) floor(num);
 	double waveNumber, noise_volume, phase;
 
-	for (int n = 20; n < n_max; ++n)
+	for (int n = 20; n < SPZ - 20; ++n)
 	{
-		waveNumber = n * PI / ZLENGTH;
-		noise_volume = generateGaussianNoise(0.0, 1.0 / (100.0 * waveNumber)) / 5;
-		phase = rand()/RAND_MAX * 2*PI; // Save this for later when complex noise is implemented
+		noise_volume = generateGaussianNoise(0.0, 5 * pow(10, -4));
 
+		#pragma omp parallel for collapse(3) num_threads(NUM_THREADS)
 		for(int i = 0; i < SPX; ++i)
 			for(int j = 0; j < SPY; ++j)
-				for(int k = 0; k < SPZ; ++k)
-					initialCondition[i][j][k][0] = initialCondition[i][j][k][0] * (1 + noise_volume * sin(waveNumber * k * HZ));
+				for(int k = 0; k < SPZ; ++k){
+					real_solution[i][j][k][0] = real_solution[i][j][k][0] * (1 + noise_volume * cos(2 * PI * n / SPZ * k));
+					imag_solution[i][j][k][0] = noise_volume * sin(2 * PI * n / SPZ * k);
+				}
 	}
 }
 
@@ -408,17 +418,22 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 	double (*condensateWidth) = malloc(sizeof(double) * arg_time_points/reduction_coeff );
 	double (*timeP) = malloc(sizeof(double) * arg_time_points/reduction_coeff);
 
-	// Add the noise to the ground state
-	addNoise(initialCondition);
 
 	// Assign initial conditions
 	for (int i = 0; i < SPX; ++i)
 		for(int j = 0; j < SPY; ++j)
-			for(int k = 0; k < SPZ; ++k){
+			for(int k = 0; k < SPZ; ++k)
 				real_solution[i][j][k][0] = initialCondition[i][j][k][0];
-				full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2);
-			}
-	
+
+	// Add the noise to the ground state
+	addNoise(real_solution, imag_solution);
+
+	// Assign initial conditions
+	for (int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			for(int k = 0; k < SPZ; ++k)
+				full_solution[i][j][k][0] = pow(real_solution[i][j][k][0], 2) + pow(imag_solution[i][j][k][0], 2);
+
 	for(int i = 0; i < SPZ; ++i)
 		solutionZD[i][0] = contraction(full_solution, 3, i);
 
@@ -524,8 +539,8 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 
     printf("%ld milliseconds elapsed\n", (end - start));
 
-	// saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, "../FaradayExperiment/xsolutionT1_res.txt");
-	// saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, "../FaradayExperiment/zsolutionT1_res.txt");
+	saveSolution(SPX, arg_time_points/reduction_coeff, solutionXD, XSOL_PATH_SAVE);
+	saveSolution(SPZ, arg_time_points/reduction_coeff, solutionZD, ZSOL_PATH_SAVE);
 
 	if (plot.plot3D == 1){
 
@@ -536,8 +551,13 @@ void realTimeProp(double initialCondition[SPX][SPY][SPZ][4], double T, int arg_t
 		plotTimeDependence(SPX, arg_time_points/reduction_coeff, solutionXD, plotX);
 		plotTimeDependence(SPZ, arg_time_points/reduction_coeff, solutionZD, plotZ);
 
-		char * commandsForGnuplot2[] = {"set title \"Time Dependence of Condensate Width\"", "plot '../FaradayExperiment/widthT1_res.txt' with lines"};
-		plotFunction(commandsForGnuplot2, 2, timeP, condensateWidth, TIME_POINTS/reduction_coeff, "../FaradayExperiment/widthT1_res.txt");
+		char cmd[80];
+		strcpy(cmd, "plot '");
+		strcat(cmd, WIDTH_PATH_SAVE);
+		strcat(cmd, "' with lines");
+
+		char * commandsForGnuplot2[] = {"set title \"Time Dependence of Condensate Width\"", cmd};
+		plotFunction(commandsForGnuplot2, 2, timeP, condensateWidth, TIME_POINTS/reduction_coeff, WIDTH_PATH_SAVE);
 	   	
 	}
 	if (plot.plot_normalization == 1){
@@ -603,7 +623,7 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 
 	normalize(real_solution);
 
-	loadMatrix(real_solution, "groundState3D.txt");
+	// loadMatrix(real_solution, GS_PATH_LOAD);
 
 	#define fgs(real_temp, i, j, k, p) ((Dxx(real_temp, i, j, k, p) + Dyy(real_temp, i, j, k, p) + Dzz(real_temp, i, j, k, p)) / 2  - V(i, j, k) * real_temp[i][j][k][p] - G * pow(real_temp[i][j][k][p] , 3))
 	;
@@ -634,7 +654,7 @@ void findGroundState(double real_solution[SPX][SPY][SPZ][4], int iterations) {
 
 	normalize(real_solution);
 
-	saveMatrix(real_solution, "groundState3D.txt");
+	saveMatrix(real_solution, GS_PATH_SAVE);
 }
 
 int main(){
@@ -643,27 +663,33 @@ int main(){
 	double (*real_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // This will be the solution matrix -- it will only hold the state of the system at one time slice
 	double (*imag_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4])); // Same as real solution but for the imaginary component of Psi
 	double (*initialCondition)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
+	double (*full_solution)[SPY][SPZ][4] = malloc(sizeof(double[SPX][SPY][SPZ][4]));
 
-	struct plot_settings plot_solution = {.plot3D = 0, .title = "Real Time Solution", .plot_normalization = 0};
+	struct plot_settings plot_solution = {.plot3D = 1, .title = "Real Time Solution", .plot_normalization = 1};
 
 	// Load the groundstate
-	loadMatrix(initialCondition, "groundState3D.txt");
+	loadMatrix(initialCondition, GS_PATH_LOAD);
 
 	// find the ground state
 	// findGroundState(initialCondition, 1000);
 
-	// addNoise(initialCondition);
+	addNoise(initialCondition, imag_solution);
 
-	// plotZDensity3D(initialCondition);
+	for (int i = 0; i < SPX; ++i)
+		for(int j = 0; j < SPY; ++j)
+			for(int k = 0; k < SPZ; ++k)
+				full_solution[i][j][k][0] = pow(initialCondition[i][j][k][0], 2) + pow(imag_solution[i][j][k][0], 2);
+
+	plotZDensity3D(full_solution);
 	// plotXDensity3D(initialCondition);
 	// Run RTP
-	realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
+	// realTimeProp(initialCondition, TIME, TIME_POINTS, real_solution, imag_solution, plot_solution);
 
 	double (*solutionXD)[TIME_POINTS/RED_COEFF] = malloc(sizeof(double[SPX][TIME_POINTS/RED_COEFF]));
 	double (*solutionZD)[TIME_POINTS/RED_COEFF] = malloc(sizeof(double[SPZ][TIME_POINTS/RED_COEFF]));
 
-	// loadSolution(SPX, TIME_POINTS / RED_COEFF, solutionXD, "../Results/xsolution3.txt");
-	// loadSolution(SPZ, TIME_POINTS / RED_COEFF, solutionZD, "../Results/zsolution3.txt");
+	// loadSolution(SPX, TIME_POINTS / RED_COEFF, solutionXD, XSOL_PATH_LOAD);
+	// loadSolution(SPZ, TIME_POINTS / RED_COEFF, solutionZD, ZSOL_PATH_LOAD);
 
 	struct plot_settings plotX = {.plot3D = 1, .title = "Real Time Solution Linear X Density", .plot_normalization = 1, .output_file = "solXD.temp"};
 	struct plot_settings plotZ = {.plot3D = 1, .title = "Real Time Solution Linear Z Density", .plot_normalization = 1, .output_file = "solZD.temp"};
@@ -680,8 +706,6 @@ int main(){
 	free(initialCondition);
 	free(solutionXD);
 	free(solutionZD);
-
-	printf("test 2\n");
 
 	return 0;
 }
